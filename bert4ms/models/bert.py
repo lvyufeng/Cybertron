@@ -1,3 +1,7 @@
+import inspect
+import mindspore.nn as nn
+import mindspore.log as logger
+
 class BertModel(nn.Cell):
     """
     Bidirectional Encoder Representations from Transformers.
@@ -96,3 +100,4 @@ class BertModel(nn.Cell):
         pooled_output = self.cast(pooled_output, self.dtype)
 
         return sequence_output, pooled_output, embedding_tables
+
