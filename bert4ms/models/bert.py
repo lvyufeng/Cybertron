@@ -1,103 +1,73 @@
-import inspect
+from ..common.activations import MultiHeadAttention, activation_map
+from ..common.cell import Cell
+from ..common.layers import Dense, Embedding
 import mindspore.nn as nn
-import mindspore.log as logger
+import mindspore.ops as P
+import mindspore.numpy as mnp
 
-class BertModel(nn.Cell):
-    """
-    Bidirectional Encoder Representations from Transformers.
-    Args:
-        config (Class): Configuration for BertModel.
-        is_training (bool): True for training mode. False for eval mode.
-        use_one_hot_embeddings (bool): Specifies whether to use one hot encoding form. Default: False.
-    """
-    def __init__(self,
-                 config,
-                 is_training,
-                 use_one_hot_embeddings=False):
-        super(BertModel, self).__init__()
-        config = copy.deepcopy(config)
-        if not is_training:
-            config.hidden_dropout_prob = 0.0
-            config.attention_probs_dropout_prob = 0.0
+class PoswiseFeedForwardNet(Cell):
+    def __init__(self, d_model, d_ff, activation:str='gelu'):
+        super().__init__()
+        self.fc1 = Dense(d_model, d_ff)
+        self.fc2 = Dense(d_ff, d_model)
+        self.activation = activation_map.get(activation, nn.GELU())
 
-        self.seq_length = config.seq_length
-        self.hidden_size = config.hidden_size
-        self.num_hidden_layers = config.num_hidden_layers
-        self.embedding_size = config.hidden_size
-        self.token_type_ids = None
+    def construct(self, x):
+        return self.fc2(self.activation(self.fc1(x)))
 
-        self.last_idx = self.num_hidden_layers - 1
-        output_embedding_shape = [-1, self.seq_length, self.embedding_size]
+class BertEmbeddings(Cell):
+    def __init__(self, vocab_size, d_model, max_len, n_segments):
+        super().__init__()
+        self.tok_embed = Embedding(vocab_size, d_model)
+        self.pos_embed = Embedding(max_len, d_model)
+        self.seg_embed = Embedding(n_segments, d_model)
+        self.norm = nn.LayerNorm((d_model,))
 
-        self.bert_embedding_lookup = nn.Embedding(
-            vocab_size=config.vocab_size,
-            embedding_size=self.embedding_size,
-            use_one_hot=use_one_hot_embeddings,
-            embedding_table=TruncatedNormal(config.initializer_range))
+        self.expand_dims = P.ExpandDims()
 
-        self.bert_embedding_postprocessor = EmbeddingPostprocessor(
-            embedding_size=self.embedding_size,
-            embedding_shape=output_embedding_shape,
-            use_relative_positions=config.use_relative_positions,
-            use_token_type=True,
-            token_type_vocab_size=config.type_vocab_size,
-            use_one_hot_embeddings=use_one_hot_embeddings,
-            initializer_range=0.02,
-            max_position_embeddings=config.max_position_embeddings,
-            dropout_prob=config.hidden_dropout_prob)
+    def construct(self, x, seg):
+        seq_len = x.shape[1]
+        pos = mnp.arange(seq_len)
+        pos = P.BroadcastTo(x.shape)(self.expand_dims(pos, 0))
+        embedding = self.tok_embed(x) + self.pos_embed(pos) + self.seg_embed(seg)
+        return self.norm(embedding)
 
-        self.bert_encoder = BertTransformer(
-            hidden_size=self.hidden_size,
-            seq_length=self.seq_length,
-            num_attention_heads=config.num_attention_heads,
-            num_hidden_layers=self.num_hidden_layers,
-            intermediate_size=config.intermediate_size,
-            attention_probs_dropout_prob=config.attention_probs_dropout_prob,
-            use_one_hot_embeddings=use_one_hot_embeddings,
-            initializer_range=config.initializer_range,
-            hidden_dropout_prob=config.hidden_dropout_prob,
-            use_relative_positions=config.use_relative_positions,
-            hidden_act=config.hidden_act,
-            compute_type=config.compute_type,
-            return_all_encoders=True)
+class BertEncoderLayer(Cell):
+    def __init__(self, d_model, n_heads, d_ff, activation, dropout):
+        super().__init__()
+        self.enc_self_attn = MultiHeadAttention(d_model, n_heads, dropout)
+        self.pos_ffn = PoswiseFeedForwardNet(d_model, d_ff, activation)
 
-        self.cast = P.Cast()
-        self.dtype = config.dtype
-        self.cast_compute_type = SaturateCast(dst_type=config.compute_type)
-        self.slice = P.StridedSlice()
+    def construct(self, enc_inputs, enc_self_attn_mask):
+        enc_outputs, attn = self.enc_self_attn(enc_inputs, enc_inputs, enc_inputs, enc_self_attn_mask)
+        enc_outputs = self.pos_ffn(enc_outputs)
+        return enc_outputs, attn
 
-        self.squeeze_1 = P.Squeeze(axis=1)
-        self.dense = nn.Dense(self.hidden_size, self.hidden_size,
-                              activation="tanh",
-                              weight_init=TruncatedNormal(config.initializer_range)).to_float(config.compute_type)
-        self._create_attention_mask_from_input_mask = CreateAttentionMaskFromInputMask(config)
+class BertEncoder(Cell):
+    def __init__(self, config):
+        super().__init__()
+        self.layers = nn.CellList([BertEncoderLayer(config.d_model, config.n_heads, config.d_ff, config.activation) for _ in range(config.n_layers)])
 
-    def construct(self, input_ids, token_type_ids, input_mask):
-        """Bidirectional Encoder Representations from Transformers."""
-        # embedding
-        embedding_tables = self.bert_embedding_lookup.embedding_table
-        word_embeddings = self.bert_embedding_lookup(input_ids)
-        embedding_output = self.bert_embedding_postprocessor(token_type_ids,
-                                                             word_embeddings)
+    def construct(self, *inputs, **kwargs):
+        return super().construct(*inputs, **kwargs)
 
-        # attention mask [batch_size, seq_length, seq_length]
-        attention_mask = self._create_attention_mask_from_input_mask(input_mask)
+class BertModel(Cell):
+    def __init__(self, config):
+        super().__init__()
+        self.embeddings = BertEmbeddings(config.vocab_size, config.d_model, config.max_len, config.n_segments)
+        self.encoder = BertEncoder(config)
+        self.pooler = Dense(config.d_model, config.d_model, activation='tanh')
+        
+    def construct(self, *inputs, **kwargs):
+        return super().construct(*inputs, **kwargs)
 
-        # bert encoder
-        encoder_output = self.bert_encoder(self.cast_compute_type(embedding_output),
-                                           attention_mask)
+    @staticmethod
+    def load(self):
+        pass
 
-        sequence_output = self.cast(encoder_output[self.last_idx], self.dtype)
+class BertForPretraining(Cell):
+    def __init__(self, auto_prefix, flags):
+        super().__init__(auto_prefix=auto_prefix, flags=flags)
 
-        # pooler
-        batch_size = P.Shape()(input_ids)[0]
-        sequence_slice = self.slice(sequence_output,
-                                    (0, 0, 0),
-                                    (batch_size, 1, self.hidden_size),
-                                    (1, 1, 1))
-        first_token = self.squeeze_1(sequence_slice)
-        pooled_output = self.dense(first_token)
-        pooled_output = self.cast(pooled_output, self.dtype)
-
-        return sequence_output, pooled_output, embedding_tables
-
+    def construct(self, *inputs, **kwargs):
+        return super().construct(*inputs, **kwargs)
