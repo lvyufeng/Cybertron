@@ -36,6 +36,7 @@ class ScaledDotProductAttention(Cell):
         context = self.matmul(attn, V)
         if self.dropout is not None:
             context = self.dropout(context)
+        return context, attn
 
 class MultiHeadAttention(Cell):
     def __init__(self, d_model, n_heads, dropout):

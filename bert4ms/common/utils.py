@@ -1,6 +1,7 @@
 import mindspore
 from mindspore import Tensor
 import mindspore.ops as P
+import mindspore.common.dtype as mstype
 from .cell import Cell
 
 class MaskedFill(Cell):
@@ -9,8 +10,9 @@ class MaskedFill(Cell):
         self.value = value
         self.select = P.Select()
         self.fill = P.Fill()
-
+        self.cast = P.Cast()
     def construct(self, inputs:Tensor, mask:Tensor):
+        mask = self.cast(mask, mstype.bool_)
         masked_value = self.fill(mindspore.float32, inputs.shape, self.value)
         output = self.select(mask, masked_value, inputs)
         return output

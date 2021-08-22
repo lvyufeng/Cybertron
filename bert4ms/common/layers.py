@@ -1,7 +1,5 @@
 import math
 import mindspore
-from .cell import Cell
-from .activations import MultiHeadAttention, activation_map
 import mindspore.nn as nn
 from mindspore.common.initializer import initializer, Normal, Uniform, HeUniform, _calculate_fan_in_and_fan_out
 from mindspore import Tensor

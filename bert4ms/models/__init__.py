@@ -1,2 +1,2 @@
 from .bert import *
-from .ernie import *
+# from .ernie import *
