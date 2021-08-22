@@ -1,8 +1,10 @@
+import os
 import numpy
 import inspect
 import mindspore.nn as nn
 import mindspore.log as logger
 import mindspore.common.dtype as mstype
+from typing import Callable, Optional, Union
 from mindspore import Tensor, Parameter
 from mindspore import context
 from mindspore.common.api import _executor, _pynative_exec
@@ -73,5 +75,24 @@ class Cell(nn.Cell):
             return _executor(self, *parallel_inputs_run, phase=self.phase)
         return _executor(self, *new_inputs, phase=self.phase)
 
+    def apply(self, fn: Callable[['Cell'], None]):
+        for cell in self.cells():
+            cell.apply(fn)
+        fn(self)
+        return self
+
 def compile_model(model, inputs):
     model.compile(inputs)
+
+class PretrainedCell(Cell):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+
+    @classmethod
+    def load(cls, pretrained_model_name_or_path: Optional[Union[str, os.PathLike]]):
+        pass
+
+    def save(self, save_dir: Union[str, os.PathLike]):
+        pass
+

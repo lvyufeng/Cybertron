@@ -1,12 +1,10 @@
-import mindspore
-from ..common.activations import MultiHeadAttention, activation_map
-from ..common.cell import Cell
-from ..common.layers import Dense, Embedding
 import mindspore.nn as nn
 import mindspore.ops as P
 import mindspore.numpy as mnp
 import mindspore.common.dtype as mstype
-from mindspore import ms_function
+from ..common.activations import MultiHeadAttention, activation_map
+from ..common.cell import Cell, PretrainedCell
+from ..common.layers import Dense, Embedding
 
 def get_attn_pad_mask(seq_q, seq_k):
     batch_size, len_q = seq_q.shape
@@ -97,9 +95,9 @@ class BertEncoder(Cell):
             outputs, enc_self_attn = layer(outputs, enc_self_attn_mask)
         return outputs
 
-class BertModel(Cell):
+class BertModel(PretrainedCell):
     def __init__(self, config):
-        super().__init__()
+        super().__init__(config)
         self.embeddings = BertEmbeddings(config)
         self.encoder = BertEncoder(config)
         self.pooler = Dense(config.hidden_size, config.hidden_size, activation='tanh')
@@ -110,10 +108,6 @@ class BertModel(Cell):
         outputs = self.encoder(outputs, enc_self_attn_mask)
         h_pooled = self.pooler(outputs[:, 0]) 
         return outputs, h_pooled
-
-    @staticmethod
-    def load(self):
-        pass
 
 class BertForPretraining(Cell):
     def __init__(self, auto_prefix, flags):
