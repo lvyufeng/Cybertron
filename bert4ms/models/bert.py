@@ -109,9 +109,41 @@ class BertModel(PretrainedCell):
         h_pooled = self.pooler(outputs[:, 0]) 
         return outputs, h_pooled
 
-class BertForPretraining(Cell):
-    def __init__(self, auto_prefix, flags):
-        super().__init__(auto_prefix=auto_prefix, flags=flags)
+class BertNextSentencePredict(Cell):
+    def __init__(self, config):
+        super().__init__()
+        self.classifier = Dense(config.hidden_size, 2)
 
-    def construct(self, *inputs, **kwargs):
-        return super().construct(*inputs, **kwargs)
+    def construct(self, h_pooled):
+        logits_clsf = self.classifier(h_pooled)
+        return logits_clsf
+
+class BertMaskedLanguageModel(Cell):
+    def __init__(self, config, tok_embed_table):
+        super().__init__()
+        self.transform = Dense(config.hidden_size, config.hidden_size)
+        self.activation = activation_map.get(config.hidden_act, nn.GELU())
+        self.norm = nn.LayerNorm((config.hidden_size, ))
+
+        self.decoder = Dense(tok_embed_table.shape[1], tok_embed_table.shape[0])
+        self.decoder.weight = tok_embed_table
+
+    def construct(self, hidden_states):
+        hidden_states = self.transform(hidden_states)
+        hidden_states = self.activation(hidden_states)
+        hidden_states = self.norm(hidden_states)
+        hidden_states = self.decoder(hidden_states)
+        return hidden_states
+
+class BertForPretraining(PretrainedCell):
+    def __init__(self, config):
+        super().__init__(config)
+        self.bert = BertModel(config)
+        self.nsp = BertNextSentencePredict(config)
+        self.mlm = BertMaskedLanguageModel(config, self.bert.embeddings.tok_embed.embedding_table)
+
+    def construct(self, input_ids, segment_ids):
+        outputs, h_pooled = self.bert(input_ids, segment_ids)
+        nsp_logits = self.nsp(h_pooled)
+        mlm_logits = self.mlm(outputs)
+        return mlm_logits, nsp_logits

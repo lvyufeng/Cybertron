@@ -89,6 +89,9 @@ class PretrainedCell(Cell):
         super().__init__()
         self.config = config
 
+    def init_weights(self):
+        pass
+
     @classmethod
     def load(cls, pretrained_model_name_or_path: Optional[Union[str, os.PathLike]]):
         pass
