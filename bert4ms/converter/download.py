@@ -16,4 +16,3 @@ HUGGINGFACE_PRETRAINED_VOCAB_ARCHIVE_MAP = {
 
 TORCH_CONFIG_NAME = 'bert_config.json'
 TORCH_WEIGHTS_NAME = 'pytorch_model.bin'
-
