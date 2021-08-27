@@ -5,8 +5,8 @@ from mindspore.common.initializer import initializer, Normal, Uniform, HeUniform
 from mindspore import Tensor
 
 class Dense(nn.Dense):
-    def __init__(self, in_channels, out_channels, has_bias=True, activation=None):
-        super().__init__(in_channels, out_channels, weight_init='normal', bias_init='zeros', has_bias=has_bias, activation=activation)
+    def __init__(self, in_channels, out_channels, weight_init='normal', bias_init='zeros', has_bias=True, activation=None):
+        super().__init__(in_channels, out_channels, weight_init=weight_init, bias_init=bias_init, has_bias=has_bias, activation=activation)
         self.reset_parameters()
         
     def reset_parameters(self):

@@ -5,12 +5,14 @@ import mindspore.common.dtype as mstype
 from ..common.activations import MultiHeadAttention, activation_map
 from ..common.cell import Cell, PretrainedCell
 from ..common.layers import Dense, Embedding
+from mindspore.common.tensor import Tensor, Tensor_
 
 def get_attn_pad_mask(seq_q, seq_k):
     batch_size, len_q = seq_q.shape
     batch_size, len_k = seq_k.shape
 
-    pad_attn_mask = P.ExpandDims()(P.Equal()(seq_k, 0), 1)
+    pad_attn_mask = P.ExpandDims()(P.ZerosLike()(seq_k), 1)
+    # pad_attn_mask = P.ExpandDims()(P.Equal()(seq_k, 0), 1)
     pad_attn_mask = P.Cast()(pad_attn_mask, mstype.int32)
     pad_attn_mask = P.BroadcastTo((batch_size, len_q, len_k))(pad_attn_mask)
     # pad_attn_mask = P.Cast()(pad_attn_mask, mstype.bool_)
@@ -47,12 +49,13 @@ class PoswiseFeedForwardNet(Cell):
         self.fc1 = Dense(d_model, d_ff)
         self.fc2 = Dense(d_ff, d_model)
         self.activation = activation_map.get(activation, nn.GELU())
-        self.layer_norm = nn.LayerNorm((d_model,), epsilon=1e-5)
+        self.layer_norm = nn.LayerNorm((d_model,), epsilon=1e-12)
 
     def construct(self, inputs):
         residual = inputs
         outputs = self.fc1(inputs)
         outputs = self.activation(outputs)
+        
         outputs = self.fc2(outputs)
         return self.layer_norm(outputs + residual)
 
@@ -60,9 +63,9 @@ class BertEmbeddings(Cell):
     def __init__(self, config):
         super().__init__()
         self.tok_embed = Embedding(config.vocab_size, config.hidden_size)
-        self.pos_embed = Embedding(config.seq_length, config.hidden_size)
+        self.pos_embed = Embedding(config.max_position_embeddings, config.hidden_size)
         self.seg_embed = Embedding(config.type_vocab_size, config.hidden_size)
-        self.norm = nn.LayerNorm((config.hidden_size,))
+        self.norm = nn.LayerNorm((config.hidden_size,), epsilon=1e-12)
 
         self.expand_dims = P.ExpandDims()
 
@@ -70,7 +73,10 @@ class BertEmbeddings(Cell):
         seq_len = x.shape[1]
         pos = mnp.arange(seq_len)
         pos = P.BroadcastTo(x.shape)(self.expand_dims(pos, 0))
-        embedding = self.tok_embed(x) + self.pos_embed(pos) + self.seg_embed(seg)
+        seg_embedding = self.seg_embed(seg)
+        tok_embedding = self.tok_embed(x)
+        embedding = tok_embedding + self.pos_embed(pos) + seg_embedding
+        # embedding = self.tok_embed(x) + self.seg_embed(seg)
         return self.norm(embedding)
 
 class BertEncoderLayer(Cell):
@@ -93,6 +99,7 @@ class BertEncoder(Cell):
         outputs = inputs
         for layer in self.layers:
             outputs, enc_self_attn = layer(outputs, enc_self_attn_mask)
+            # print(outputs)
         return outputs
 
 class BertModel(PretrainedCell):
@@ -105,6 +112,7 @@ class BertModel(PretrainedCell):
     def construct(self, input_ids, segment_ids):
         outputs = self.embeddings(input_ids, segment_ids)
         enc_self_attn_mask = get_attn_pad_mask(input_ids, input_ids)
+        print(enc_self_attn_mask)
         outputs = self.encoder(outputs, enc_self_attn_mask)
         h_pooled = self.pooler(outputs[:, 0]) 
         return outputs, h_pooled
@@ -123,10 +131,8 @@ class BertMaskedLanguageModel(Cell):
         super().__init__()
         self.transform = Dense(config.hidden_size, config.hidden_size)
         self.activation = activation_map.get(config.hidden_act, nn.GELU())
-        self.norm = nn.LayerNorm((config.hidden_size, ))
-
-        self.decoder = Dense(tok_embed_table.shape[1], tok_embed_table.shape[0])
-        self.decoder.weight = tok_embed_table
+        self.norm = nn.LayerNorm((config.hidden_size, ), epsilon=1e-12)
+        self.decoder = Dense(tok_embed_table.shape[1], tok_embed_table.shape[0], weight_init=tok_embed_table)
 
     def construct(self, hidden_states):
         hidden_states = self.transform(hidden_states)

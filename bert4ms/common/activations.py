@@ -8,10 +8,16 @@ from .cell import Cell
 from .layers import Dense
 from .utils import MaskedFill
 
-activation_map = {
-    'relu': nn.ReLU(),
-    'gelu': nn.GELU(),
-}
+class GELU(Cell):
+    def __init__(self):
+        super().__init__()
+        self.erf = P.Erf()
+        self.sqrt = P.Sqrt()
+        self.const0 = Tensor(0.5, mindspore.float32)
+        self.const1 = Tensor(1.0, mindspore.float32)
+        self.const2 = Tensor(2.0, mindspore.float32)
+    def construct(self, x):
+        return x * self.const0 * (self.const1 + self.erf(x / self.sqrt(self.const2)))
 
 class ScaledDotProductAttention(Cell):
     def __init__(self, d_k, dropout):
@@ -32,6 +38,7 @@ class ScaledDotProductAttention(Cell):
         K = self.transpose(K, (0, 1, 3, 2))
         scores = self.matmul(Q, K) / self.sqrt(self.scale) # scores : [batch_size x n_heads x len_q(=len_k) x len_k(=len_q)]
         scores = self.masked_fill(scores, attn_mask) # Fills elements of self tensor with value where mask is one.
+        # scores = scores + attn_mask
         attn = self.softmax(scores)
         context = self.matmul(attn, V)
         if self.dropout is not None:
@@ -48,7 +55,7 @@ class MultiHeadAttention(Cell):
         self.linear = Dense(d_model, d_model)
         self.head_dim = d_model // n_heads
         assert self.head_dim * n_heads == d_model, "embed_dim must be divisible by num_heads"
-        self.layer_norm = nn.LayerNorm((d_model, ), epsilon=1e-5)
+        self.layer_norm = nn.LayerNorm((d_model, ), epsilon=1e-12)
         self.attention = ScaledDotProductAttention(self.head_dim, dropout)
         # ops
         self.transpose = P.Transpose()
@@ -74,3 +81,8 @@ class MultiHeadAttention(Cell):
         context = self.transpose(context, (0, 2, 1, 3)).view((batch_size, -1, self.n_heads * self.head_dim)) # context: [batch_size x len_q x n_heads * d_v]
         output = self.linear(context) 
         return self.layer_norm(output + residual), attn # output: [batch_size x len_q x d_model]
+
+activation_map = {
+    'relu': nn.ReLU(),
+    'gelu': GELU(),
+}
