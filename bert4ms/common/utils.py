@@ -1,10 +1,11 @@
 import mindspore
 from mindspore import Tensor
 import mindspore.ops as P
+import mindspore.nn as nn
 import mindspore.common.dtype as mstype
 from .cell import Cell
 
-class MaskedFill(Cell):
+class MaskedFill(nn.Cell):
     def __init__(self, value):
         super().__init__()
         self.value = value

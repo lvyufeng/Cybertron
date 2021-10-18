@@ -8,7 +8,7 @@ from .cell import Cell
 from .layers import Dense
 from .utils import MaskedFill
 
-class GELU(Cell):
+class GELU(nn.Cell):
     def __init__(self):
         super().__init__()
         self.erf = P.Erf()
@@ -19,7 +19,7 @@ class GELU(Cell):
     def construct(self, x):
         return x * self.const0 * (self.const1 + self.erf(x / self.sqrt(self.const2)))
 
-class ScaledDotProductAttention(Cell):
+class ScaledDotProductAttention(nn.Cell):
     def __init__(self, d_k, dropout):
         super().__init__()
         self.scale = Tensor(d_k, mindspore.float32)
@@ -34,24 +34,24 @@ class ScaledDotProductAttention(Cell):
         else:
             self.dropout = None
 
-    def construct(self, Q, K, V, attn_mask):
-        K = self.transpose(K, (0, 1, 3, 2))
-        scores = self.matmul(Q, K) / self.sqrt(self.scale) # scores : [batch_size x n_heads x len_q(=len_k) x len_k(=len_q)]
+    def construct(self, query, key, value, attn_mask):
+        key = self.transpose(key, (0, 1, 3, 2))
+        scores = self.matmul(query, key) / self.sqrt(self.scale) # scores : [batch_size x n_heads x len_q(=len_k) x len_k(=len_q)]
         scores = self.masked_fill(scores, attn_mask) # Fills elements of self tensor with value where mask is one.
         # scores = scores + attn_mask
         attn = self.softmax(scores)
-        context = self.matmul(attn, V)
+        context = self.matmul(attn, value)
         if self.dropout is not None:
             context = self.dropout(context)
         return context, attn
 
-class MultiHeadAttention(Cell):
+class MultiHeadAttention(nn.Cell):
     def __init__(self, d_model, n_heads, dropout):
         super().__init__()
         self.n_heads = n_heads
-        self.W_Q = Dense(d_model, d_model)
-        self.W_K = Dense(d_model, d_model)
-        self.W_V = Dense(d_model, d_model)
+        self.query = Dense(d_model, d_model)
+        self.key = Dense(d_model, d_model)
+        self.value = Dense(d_model, d_model)
         self.linear = Dense(d_model, d_model)
         self.head_dim = d_model // n_heads
         assert self.head_dim * n_heads == d_model, "embed_dim must be divisible by num_heads"
@@ -62,12 +62,12 @@ class MultiHeadAttention(Cell):
         self.expanddims = P.ExpandDims()
         self.tile = P.Tile()
         
-    def construct(self, Q, K, V, attn_mask):
+    def construct(self, query, key, value, attn_mask):
         # q: [batch_size x len_q x d_model], k: [batch_size x len_k x d_model], v: [batch_size x len_k x d_model]
-        residual, batch_size = Q, Q.shape[0]
-        q_s = self.W_Q(Q).view((batch_size, -1, self.n_heads, self.head_dim)) 
-        k_s = self.W_K(K).view((batch_size, -1, self.n_heads, self.head_dim)) 
-        v_s = self.W_V(V).view((batch_size, -1, self.n_heads, self.head_dim)) 
+        residual, batch_size = query, query.shape[0]
+        q_s = self.query(query).view((batch_size, -1, self.n_heads, self.head_dim)) 
+        k_s = self.key(key).view((batch_size, -1, self.n_heads, self.head_dim)) 
+        v_s = self.value(value).view((batch_size, -1, self.n_heads, self.head_dim)) 
         # (B, S, D) -proj-> (B, S, D) -split-> (B, S, H, W) -trans-> (B, H, S, W)
         q_s = self.transpose(q_s, (0, 2, 1, 3)) # q_s: [batch_size x n_heads x len_q x d_k]
         k_s = self.transpose(k_s, (0, 2, 1, 3)) # k_s: [batch_size x n_heads x len_k x d_k]
