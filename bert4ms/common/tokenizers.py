@@ -2,6 +2,8 @@ import io
 import collections
 import unicodedata
 import six
+import os
+from typing import Callable, Optional, Union
 
 class FullTokenizer:
     """Runs end-to-end tokenziation."""
@@ -22,6 +24,10 @@ class FullTokenizer:
 
     def convert_tokens_to_ids(self, tokens):
         return convert_by_vocab(self.vocab, tokens)
+
+    @classmethod
+    def load(cls, pretrained_model_name_or_path: Optional[Union[str, os.PathLike]]):
+        raise NotImplementedError
 
 class BasicTokenizer:
     """Runs basic tokenization (punctuation splitting, lower casing, etc.)."""

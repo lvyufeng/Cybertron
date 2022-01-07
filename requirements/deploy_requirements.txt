@@ -1,0 +1,2 @@
+mindspore-gpu
+numpy

@@ -1,0 +1,6 @@
+torch
+mindspore-gpu
+numpy
+requests
+tqdm
+transformers>=4.15

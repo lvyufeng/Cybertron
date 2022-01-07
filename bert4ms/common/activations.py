@@ -1,33 +1,14 @@
-from typing import Optional
 import mindspore
 import mindspore.nn as nn
-import mindspore.ops as P
-from mindspore import Tensor, Parameter
-from mindspore.common.initializer import initializer, XavierUniform, Zero
-from .cell import Cell
+import mindspore.ops as ops
+from mindspore import Tensor
 from .layers import Dense
-from .utils import MaskedFill
-
-class GELU(nn.Cell):
-    def __init__(self):
-        super().__init__()
-        self.erf = P.Erf()
-        self.sqrt = P.Sqrt()
-        self.const0 = Tensor(0.5, mindspore.float32)
-        self.const1 = Tensor(1.0, mindspore.float32)
-        self.const2 = Tensor(2.0, mindspore.float32)
-    def construct(self, x):
-        return x * self.const0 * (self.const1 + self.erf(x / self.sqrt(self.const2)))
 
 class ScaledDotProductAttention(nn.Cell):
     def __init__(self, d_k, dropout):
         super().__init__()
         self.scale = Tensor(d_k, mindspore.float32)
-        self.matmul = nn.MatMul()
-        self.transpose = P.Transpose()
         self.softmax = nn.Softmax(axis=-1)
-        self.sqrt = P.Sqrt()
-        self.masked_fill = MaskedFill(-1e9)
 
         if dropout > 0.0:
             self.dropout = nn.Dropout(1-dropout)
@@ -35,12 +16,13 @@ class ScaledDotProductAttention(nn.Cell):
             self.dropout = None
 
     def construct(self, query, key, value, attn_mask):
-        key = self.transpose(key, (0, 1, 3, 2))
-        scores = self.matmul(query, key) / self.sqrt(self.scale) # scores : [batch_size x n_heads x len_q(=len_k) x len_k(=len_q)]
-        scores = self.masked_fill(scores, attn_mask) # Fills elements of self tensor with value where mask is one.
+        key = key.transpose((0, 1, 3, 2))
+        scores = ops.matmul(query, key) / ops.sqrt(self.scale) # scores : [batch_size x n_heads x len_q(=len_k) x len_k(=len_q)]
+        # scores = self.masked_fill(scores, attn_mask) # Fills elements of self tensor with value where mask is one.
+        scores = scores.masked_fill(attn_mask, -1e9)
         # scores = scores + attn_mask
         attn = self.softmax(scores)
-        context = self.matmul(attn, value)
+        context = ops.matmul(attn, value)
         if self.dropout is not None:
             context = self.dropout(context)
         return context, attn
@@ -57,10 +39,6 @@ class MultiHeadAttention(nn.Cell):
         assert self.head_dim * n_heads == d_model, "embed_dim must be divisible by num_heads"
         self.layer_norm = nn.LayerNorm((d_model, ), epsilon=1e-12)
         self.attention = ScaledDotProductAttention(self.head_dim, dropout)
-        # ops
-        self.transpose = P.Transpose()
-        self.expanddims = P.ExpandDims()
-        self.tile = P.Tile()
         
     def construct(self, query, key, value, attn_mask):
         # q: [batch_size x len_q x d_model], k: [batch_size x len_k x d_model], v: [batch_size x len_k x d_model]
@@ -69,20 +47,20 @@ class MultiHeadAttention(nn.Cell):
         k_s = self.key(key).view((batch_size, -1, self.n_heads, self.head_dim)) 
         v_s = self.value(value).view((batch_size, -1, self.n_heads, self.head_dim)) 
         # (B, S, D) -proj-> (B, S, D) -split-> (B, S, H, W) -trans-> (B, H, S, W)
-        q_s = self.transpose(q_s, (0, 2, 1, 3)) # q_s: [batch_size x n_heads x len_q x d_k]
-        k_s = self.transpose(k_s, (0, 2, 1, 3)) # k_s: [batch_size x n_heads x len_k x d_k]
-        v_s = self.transpose(v_s, (0, 2, 1, 3)) # v_s: [batch_size x n_heads x len_k x d_v]
+        q_s = q_s.transpose((0, 2, 1, 3)) # q_s: [batch_size x n_heads x len_q x d_k]
+        k_s = k_s.transpose((0, 2, 1, 3)) # k_s: [batch_size x n_heads x len_k x d_k]
+        v_s = v_s.transpose((0, 2, 1, 3)) # v_s: [batch_size x n_heads x len_k x d_v]
 
-        attn_mask = self.expanddims(attn_mask, 1)
-        attn_mask = self.tile(attn_mask, (1, self.n_heads, 1, 1)) # attn_mask : [batch_size x n_heads x len_q x len_k]
+        attn_mask = attn_mask.expand_dims(1)
+        attn_mask = ops.tile(attn_mask, (1, self.n_heads, 1, 1)) # attn_mask : [batch_size x n_heads x len_q x len_k]
         
         # context: [batch_size x n_heads x len_q x d_v], attn: [batch_size x n_heads x len_q(=len_k) x len_k(=len_q)]
         context, attn = self.attention(q_s, k_s, v_s, attn_mask)
-        context = self.transpose(context, (0, 2, 1, 3)).view((batch_size, -1, self.n_heads * self.head_dim)) # context: [batch_size x len_q x n_heads * d_v]
+        context = context.transpose((0, 2, 1, 3)).view((batch_size, -1, self.n_heads * self.head_dim)) # context: [batch_size x len_q x n_heads * d_v]
         output = self.linear(context) 
         return self.layer_norm(output + residual), attn # output: [batch_size x len_q x d_model]
 
 activation_map = {
     'relu': nn.ReLU(),
-    'gelu': GELU(),
+    'gelu': nn.GELU(approximate=False),
 }

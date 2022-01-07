@@ -129,4 +129,4 @@ dmypy.json
 .pyre/
 
 # mindspore output
-analyze_fail_*.dat
+analyze_fail*.dat

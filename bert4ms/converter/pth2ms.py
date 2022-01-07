@@ -14,4 +14,4 @@ def convert_state_dict(pth_file):
     save_checkpoint(ms_ckpt, pth_file + '.ckpt')    
     pass
 
-convert_state_dict('/root/bert-base-uncased-pytorch_model.bin')
+convert_state_dict('/root/pytorch_model.bin')

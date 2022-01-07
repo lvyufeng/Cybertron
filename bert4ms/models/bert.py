@@ -1,20 +1,23 @@
 import mindspore.nn as nn
-import mindspore.ops as P
+import mindspore.ops as ops
 import mindspore.numpy as mnp
 import mindspore.common.dtype as mstype
 from ..common.activations import MultiHeadAttention, activation_map
-from ..common.cell import Cell, PretrainedCell
+from ..common.cell import PretrainedCell
 from ..common.layers import Dense, Embedding
 from ..common.tokenizers import FullTokenizer
+from mindspore import ms_function
 
+@ms_function
 def get_attn_pad_mask(seq_q, seq_k):
     batch_size, len_q = seq_q.shape
     batch_size, len_k = seq_k.shape
 
-    pad_attn_mask = P.ExpandDims()(P.ZerosLike()(seq_k), 1)
+    pad_attn_mask = ops.equal(seq_k, 0)
+    pad_attn_mask = pad_attn_mask.expand_dims(1)
     # pad_attn_mask = P.ExpandDims()(P.Equal()(seq_k, 0), 1)
-    pad_attn_mask = P.Cast()(pad_attn_mask, mstype.int32)
-    pad_attn_mask = P.BroadcastTo((batch_size, len_q, len_k))(pad_attn_mask)
+    # pad_attn_mask = P.Cast()(pad_attn_mask, mstype.int32)
+    pad_attn_mask = ops.BroadcastTo((batch_size, len_q, len_k))(pad_attn_mask)
     # pad_attn_mask = P.Cast()(pad_attn_mask, mstype.bool_)
     return pad_attn_mask
 
@@ -55,7 +58,7 @@ class PoswiseFeedForwardNet(nn.Cell):
         super().__init__()
         self.fc1 = Dense(d_model, d_ff)
         self.fc2 = Dense(d_ff, d_model)
-        self.activation = activation_map.get(activation, nn.GELU())
+        self.activation = activation_map.get(activation, nn.GELU(False))
         self.layer_norm = nn.LayerNorm((d_model,), epsilon=1e-12)
 
     def construct(self, inputs):
@@ -74,12 +77,10 @@ class BertEmbeddings(nn.Cell):
         self.seg_embed = Embedding(config.type_vocab_size, config.hidden_size)
         self.norm = nn.LayerNorm((config.hidden_size,), epsilon=1e-12)
 
-        self.expand_dims = P.ExpandDims()
-
     def construct(self, x, seg):
         seq_len = x.shape[1]
         pos = mnp.arange(seq_len)
-        pos = P.BroadcastTo(x.shape)(self.expand_dims(pos, 0))
+        pos = pos.expand_dims(0).expand_as(x)
         seg_embedding = self.seg_embed(seg)
         tok_embedding = self.tok_embed(x)
         embedding = tok_embedding + self.pos_embed(pos) + seg_embedding
