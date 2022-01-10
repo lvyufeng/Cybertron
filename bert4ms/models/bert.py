@@ -6,20 +6,7 @@ from ..common.activations import MultiHeadAttention, activation_map
 from ..common.cell import PretrainedCell
 from ..common.layers import Dense, Embedding
 from ..common.tokenizers import FullTokenizer
-from mindspore import ms_function
-
-@ms_function
-def get_attn_pad_mask(seq_q, seq_k):
-    batch_size, len_q = seq_q.shape
-    batch_size, len_k = seq_k.shape
-
-    pad_attn_mask = ops.equal(seq_k, 0)
-    pad_attn_mask = pad_attn_mask.expand_dims(1)
-    # pad_attn_mask = P.ExpandDims()(P.Equal()(seq_k, 0), 1)
-    # pad_attn_mask = P.Cast()(pad_attn_mask, mstype.int32)
-    pad_attn_mask = ops.BroadcastTo((batch_size, len_q, len_k))(pad_attn_mask)
-    # pad_attn_mask = P.Cast()(pad_attn_mask, mstype.bool_)
-    return pad_attn_mask
+from mindspore import ms_function, Tensor
 
 class BertTokenizer(FullTokenizer):
     def __init__(self, vocab_file, do_lower_case):
@@ -29,6 +16,8 @@ class BertTokenizer(FullTokenizer):
         return None
 
 class BertConfig:
+    """Configuration for BERT
+    """
     def __init__(self,
                 seq_length=128,
                 vocab_size=32000,
@@ -53,111 +42,229 @@ class BertConfig:
         self.max_position_embeddings = max_position_embeddings
         self.type_vocab_size = type_vocab_size
 
-class PoswiseFeedForwardNet(nn.Cell):
-    def __init__(self, d_model, d_ff, activation:str='gelu'):
-        super().__init__()
-        self.fc1 = Dense(d_model, d_ff)
-        self.fc2 = Dense(d_ff, d_model)
-        self.activation = activation_map.get(activation, nn.GELU(False))
-        self.layer_norm = nn.LayerNorm((d_model,), epsilon=1e-12)
-
-    def construct(self, inputs):
-        residual = inputs
-        outputs = self.fc1(inputs)
-        outputs = self.activation(outputs)
-        
-        outputs = self.fc2(outputs)
-        return self.layer_norm(outputs + residual)
-
 class BertEmbeddings(nn.Cell):
     def __init__(self, config):
         super().__init__()
-        self.tok_embed = Embedding(config.vocab_size, config.hidden_size)
-        self.pos_embed = Embedding(config.max_position_embeddings, config.hidden_size)
-        self.seg_embed = Embedding(config.type_vocab_size, config.hidden_size)
-        self.norm = nn.LayerNorm((config.hidden_size,), epsilon=1e-12)
+        self.word_embeddings = Embedding(config.vocab_size, config.hidden_size)
+        self.position_embeddings = Embedding(config.max_position_embeddings, config.hidden_size)
+        self.token_type_embeddings = Embedding(config.type_vocab_size, config.hidden_size)
+        self.LayerNorm = nn.LayerNorm((config.hidden_size,), epsilon=1e-12)
+        self.dropout = nn.Dropout(1 - config.hidden_dropout_prob)
 
-    def construct(self, x, seg):
-        seq_len = x.shape[1]
-        pos = mnp.arange(seq_len)
-        pos = pos.expand_dims(0).expand_as(x)
-        seg_embedding = self.seg_embed(seg)
-        tok_embedding = self.tok_embed(x)
-        embedding = tok_embedding + self.pos_embed(pos) + seg_embedding
-        # embedding = self.tok_embed(x) + self.seg_embed(seg)
-        return self.norm(embedding)
+    def construct(self, input_ids, token_type_ids=None):
+        seq_len = input_ids.shape[1]
+        position_ids = mnp.arange(seq_len)
+        position_ids = position_ids.expand_dims(0).expand_as(input_ids)
+        if token_type_ids is None:
+            token_type_ids = ops.zeros_like(input_ids)
 
-class BertEncoderLayer(nn.Cell):
-    def __init__(self, d_model, n_heads, d_ff, activation, dropout):
-        super().__init__()
-        self.enc_self_attn = MultiHeadAttention(d_model, n_heads, dropout)
-        self.pos_ffn = PoswiseFeedForwardNet(d_model, d_ff, activation)
+        words_embeddings = self.word_embeddings(input_ids)
+        position_embeddings = self.position_embeddings(position_ids)
+        token_type_embeddings = self.token_type_embeddings(token_type_ids)
+        embeddings = words_embeddings + position_embeddings + token_type_embeddings
+        embeddings = self.LayerNorm(embeddings)
+        embeddings = self.dropout(embeddings)
+        return embeddings
 
-    def construct(self, enc_inputs, enc_self_attn_mask):
-        enc_outputs, attn = self.enc_self_attn(enc_inputs, enc_inputs, enc_inputs, enc_self_attn_mask)
-        enc_outputs = self.pos_ffn(enc_outputs)
-        return enc_outputs, attn
+class BertSelfAttention(nn.Cell):
+    def __init__(self, config):
+        super(BertSelfAttention, self).__init__()
+        if config.hidden_size % config.num_attention_heads != 0:
+            raise ValueError(
+                "The hidden size (%d) is not a multiple of the number of attention "
+                "heads (%d)" % (config.hidden_size, config.num_attention_heads))
+        self.num_attention_heads = config.num_attention_heads
+        self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
+        self.all_head_size = self.num_attention_heads * self.attention_head_size
+
+        self.query = Dense(config.hidden_size, self.all_head_size)
+        self.key = Dense(config.hidden_size, self.all_head_size)
+        self.value = Dense(config.hidden_size, self.all_head_size)
+
+        self.dropout = nn.Dropout(1 - config.attention_probs_dropout_prob)
+
+    def transpose_for_scores(self, x):
+        new_x_shape = x.shape[:-1] + (self.num_attention_heads, self.attention_head_size)
+        x = x.view(*new_x_shape)
+        return x.transpose(0, 2, 1, 3)
+
+    def construct(self, hidden_states, attention_mask):
+        mixed_query_layer = self.query(hidden_states)
+        mixed_key_layer = self.key(hidden_states)
+        mixed_value_layer = self.value(hidden_states)
+
+        query_layer = self.transpose_for_scores(mixed_query_layer)
+        key_layer = self.transpose_for_scores(mixed_key_layer)
+        value_layer = self.transpose_for_scores(mixed_value_layer)
+
+        # Take the dot product between "query" and "key" to get the raw attention scores.
+        attention_scores = ops.matmul(query_layer, key_layer.swapaxes(-1, -2))
+        attention_scores = attention_scores / ops.sqrt(Tensor(self.attention_head_size, mstype.float32))
+        # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+        attention_scores = attention_scores + attention_mask
+
+        # Normalize the attention scores to probabilities.
+        attention_probs = nn.Softmax(axis=-1)(attention_scores)
+
+        # This is actually dropping out entire tokens to attend to, which might
+        # seem a bit unusual, but is taken from the original Transformer paper.
+        attention_probs = self.dropout(attention_probs)
+
+        context_layer = ops.matmul(attention_probs, value_layer)
+        context_layer = context_layer.transpose(0, 2, 1, 3)
+        new_context_layer_shape = context_layer.shape[:-2] + (self.all_head_size,)
+        context_layer = context_layer.view(*new_context_layer_shape)
+        return context_layer 
+
+class BertSelfOutput(nn.Cell):
+    def __init__(self, config):
+        super(BertSelfOutput, self).__init__()
+        self.dense = Dense(config.hidden_size, config.hidden_size)
+        self.LayerNorm = nn.LayerNorm((config.hidden_size,), epsilon=1e-12)
+        self.dropout = nn.Dropout(1 - config.hidden_dropout_prob)
+
+    def construct(self, hidden_states, input_tensor):
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.dropout(hidden_states)
+        hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        return hidden_states
+
+class BertAttention(nn.Cell):
+    def __init__(self, config):
+        super(BertAttention, self).__init__()
+        self.self_attn = BertSelfAttention(config)
+        self.output = BertSelfOutput(config)
+
+    def construct(self, input_tensor, attention_mask):
+        self_output = self.self_attn(input_tensor, attention_mask)
+        attention_output = self.output(self_output, input_tensor)
+        return attention_output
+
+class BertIntermediate(nn.Cell):
+    def __init__(self, config):
+        super(BertIntermediate, self).__init__()
+        self.dense = Dense(config.hidden_size, config.intermediate_size)
+        self.intermediate_act_fn = activation_map.get(config.hidden_act, nn.GELU(False))
+
+    def construct(self, hidden_states):
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.intermediate_act_fn(hidden_states)
+        return hidden_states
+
+class BertOutput(nn.Cell):
+    def __init__(self, config):
+        super(BertOutput, self).__init__()
+        self.dense = Dense(config.intermediate_size, config.hidden_size)
+        self.LayerNorm = nn.LayerNorm((config.hidden_size,), epsilon=1e-12)
+        self.dropout = nn.Dropout(1 - config.hidden_dropout_prob)
+
+    def construct(self, hidden_states, input_tensor):
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.dropout(hidden_states)
+        hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        return hidden_states
+
+
+class BertLayer(nn.Cell):
+    def __init__(self, config):
+        super(BertLayer, self).__init__()
+        self.attention = BertAttention(config)
+        self.intermediate = BertIntermediate(config)
+        self.output = BertOutput(config)
+
+    def construct(self, hidden_states, attention_mask):
+        attention_output = self.attention(hidden_states, attention_mask)
+        intermediate_output = self.intermediate(attention_output)
+        layer_output = self.output(intermediate_output, attention_output)
+        return layer_output
+
 
 class BertEncoder(nn.Cell):
     def __init__(self, config):
-        super().__init__()
-        self.layers = nn.CellList([BertEncoderLayer(config.hidden_size, config.num_attention_heads, config.intermediate_size, config.hidden_act, config.hidden_dropout_prob) for _ in range(config.num_hidden_layers)])
+        super(BertEncoder, self).__init__()
+        self.layer = nn.CellList([BertLayer(config) for _ in range(config.num_hidden_layers)])
 
-    def construct(self, inputs, enc_self_attn_mask):
-        outputs = inputs
-        for layer in self.layers:
-            outputs, enc_self_attn = layer(outputs, enc_self_attn_mask)
-            # print(outputs)
-        return outputs
+    def construct(self, hidden_states, attention_mask, output_all_encoded_layers=True):
+        all_encoder_layers = ()
+        for layer_module in self.layer:
+            hidden_states = layer_module(hidden_states, attention_mask)
+            if output_all_encoded_layers:
+                all_encoder_layers += (hidden_states,)
+        if not output_all_encoded_layers:
+            all_encoder_layers += (hidden_states,)
+        return all_encoder_layers
+
+class BertPooler(nn.Cell):
+    def __init__(self, config):
+        super(BertPooler, self).__init__()
+        self.dense = Dense(config.hidden_size, config.hidden_size, activation='tanh')
+
+    def construct(self, hidden_states):
+        # We "pool" the model by simply taking the hidden state corresponding
+        # to the first token.
+        first_token_tensor = hidden_states[:, 0]
+        pooled_output = self.dense(first_token_tensor)
+        return pooled_output
 
 class BertModel(nn.Cell):
     def __init__(self, config):
         super().__init__(config)
         self.embeddings = BertEmbeddings(config)
         self.encoder = BertEncoder(config)
-        self.pooler = Dense(config.hidden_size, config.hidden_size, activation='tanh')
-        
-    def construct(self, input_ids, segment_ids):
-        outputs = self.embeddings(input_ids, segment_ids)
-        enc_self_attn_mask = get_attn_pad_mask(input_ids, input_ids)
-        # print(enc_self_attn_mask)
-        outputs = self.encoder(outputs, enc_self_attn_mask)
-        h_pooled = self.pooler(outputs[:, 0]) 
-        return outputs, h_pooled
+        self.pooler = BertPooler(config)
 
-class BertNextSentencePredict(nn.Cell):
-    def __init__(self, config):
-        super().__init__()
-        self.classifier = Dense(config.hidden_size, 2)
+    def construct(self, input_ids, token_type_ids=None, attention_mask=None, output_all_encoded_layers=True):
+        if attention_mask is None:
+            attention_mask = ops.ones_like(input_ids)
+        if token_type_ids is None:
+            token_type_ids = ops.zeros_like(input_ids)
 
-    def construct(self, h_pooled):
-        logits_clsf = self.classifier(h_pooled)
-        return logits_clsf
+        extended_attention_mask = attention_mask.expand_dims(1).expand_dims(2)
+        extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
 
-class BertMaskedLanguageModel(nn.Cell):
-    def __init__(self, config, tok_embed_table):
-        super().__init__()
-        self.transform = Dense(config.hidden_size, config.hidden_size)
-        self.activation = activation_map.get(config.hidden_act, nn.GELU())
-        self.norm = nn.LayerNorm((config.hidden_size, ), epsilon=1e-12)
-        self.decoder = Dense(tok_embed_table.shape[1], tok_embed_table.shape[0], weight_init=tok_embed_table)
+        embedding_output = self.embeddings(input_ids, token_type_ids)
+        encoded_layers = self.encoder(embedding_output,
+                                      extended_attention_mask,
+                                      output_all_encoded_layers=output_all_encoded_layers)
+        sequence_output = encoded_layers[-1]
+        pooled_output = self.pooler(sequence_output)
+        if not output_all_encoded_layers:
+            encoded_layers = encoded_layers[-1]
+        return encoded_layers, pooled_output
 
-    def construct(self, hidden_states):
-        hidden_states = self.transform(hidden_states)
-        hidden_states = self.activation(hidden_states)
-        hidden_states = self.norm(hidden_states)
-        hidden_states = self.decoder(hidden_states)
-        return hidden_states
+# class BertNextSentencePredict(nn.Cell):
+#     def __init__(self, config):
+#         super().__init__()
+#         self.classifier = Dense(config.hidden_size, 2)
 
-class BertForPretraining(nn.Cell):
-    def __init__(self, config):
-        super().__init__(config)
-        self.bert = BertModel(config)
-        self.nsp = BertNextSentencePredict(config)
-        self.mlm = BertMaskedLanguageModel(config, self.bert.embeddings.tok_embed.embedding_table)
+#     def construct(self, h_pooled):
+#         logits_clsf = self.classifier(h_pooled)
+#         return logits_clsf
 
-    def construct(self, input_ids, segment_ids):
-        outputs, h_pooled = self.bert(input_ids, segment_ids)
-        nsp_logits = self.nsp(h_pooled)
-        mlm_logits = self.mlm(outputs)
-        return mlm_logits, nsp_logits
+# class BertMaskedLanguageModel(nn.Cell):
+#     def __init__(self, config, tok_embed_table):
+#         super().__init__()
+#         self.transform = Dense(config.hidden_size, config.hidden_size)
+#         self.activation = activation_map.get(config.hidden_act, nn.GELU())
+#         self.norm = nn.LayerNorm((config.hidden_size, ), epsilon=1e-12)
+#         self.decoder = Dense(tok_embed_table.shape[1], tok_embed_table.shape[0], weight_init=tok_embed_table)
+
+#     def construct(self, hidden_states):
+#         hidden_states = self.transform(hidden_states)
+#         hidden_states = self.activation(hidden_states)
+#         hidden_states = self.norm(hidden_states)
+#         hidden_states = self.decoder(hidden_states)
+#         return hidden_states
+
+# class BertForPretraining(nn.Cell):
+#     def __init__(self, config):
+#         super().__init__(config)
+#         self.bert = BertModel(config)
+#         self.nsp = BertNextSentencePredict(config)
+#         self.mlm = BertMaskedLanguageModel(config, self.bert.embeddings.tok_embed.embedding_table)
+
+#     def construct(self, input_ids, segment_ids):
+#         outputs, h_pooled = self.bert(input_ids, segment_ids)
+#         nsp_logits = self.nsp(h_pooled)
+#         mlm_logits = self.mlm(outputs)
+#         return mlm_logits, nsp_logits
