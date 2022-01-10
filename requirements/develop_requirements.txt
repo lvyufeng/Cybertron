@@ -1,5 +1,4 @@
 torch
-mindspore-gpu
 numpy
 requests
 tqdm

@@ -2,18 +2,11 @@ import mindspore.nn as nn
 import mindspore.ops as ops
 import mindspore.numpy as mnp
 import mindspore.common.dtype as mstype
-from ..common.activations import MultiHeadAttention, activation_map
+from ..common.activations import activation_map, GELU
 from ..common.cell import PretrainedCell
 from ..common.layers import Dense, Embedding
 from ..common.tokenizers import FullTokenizer
 from mindspore import ms_function, Tensor
-
-class BertTokenizer(FullTokenizer):
-    def __init__(self, vocab_file, do_lower_case):
-        super().__init__(vocab_file, do_lower_case=do_lower_case)
-
-    def __call__(self, ):
-        return None
 
 class BertConfig:
     """Configuration for BERT
@@ -48,7 +41,7 @@ class BertEmbeddings(nn.Cell):
         self.word_embeddings = Embedding(config.vocab_size, config.hidden_size)
         self.position_embeddings = Embedding(config.max_position_embeddings, config.hidden_size)
         self.token_type_embeddings = Embedding(config.type_vocab_size, config.hidden_size)
-        self.LayerNorm = nn.LayerNorm((config.hidden_size,), epsilon=1e-12)
+        self.layernorm = nn.LayerNorm((config.hidden_size,), epsilon=1e-12)
         self.dropout = nn.Dropout(1 - config.hidden_dropout_prob)
 
     def construct(self, input_ids, token_type_ids=None):
@@ -62,7 +55,7 @@ class BertEmbeddings(nn.Cell):
         position_embeddings = self.position_embeddings(position_ids)
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
         embeddings = words_embeddings + position_embeddings + token_type_embeddings
-        embeddings = self.LayerNorm(embeddings)
+        embeddings = self.layernorm(embeddings)
         embeddings = self.dropout(embeddings)
         return embeddings
 
@@ -120,13 +113,13 @@ class BertSelfOutput(nn.Cell):
     def __init__(self, config):
         super(BertSelfOutput, self).__init__()
         self.dense = Dense(config.hidden_size, config.hidden_size)
-        self.LayerNorm = nn.LayerNorm((config.hidden_size,), epsilon=1e-12)
+        self.layernorm = nn.LayerNorm((config.hidden_size,), epsilon=1e-12)
         self.dropout = nn.Dropout(1 - config.hidden_dropout_prob)
 
     def construct(self, hidden_states, input_tensor):
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
-        hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        hidden_states = self.layernorm(hidden_states + input_tensor)
         return hidden_states
 
 class BertAttention(nn.Cell):
@@ -144,7 +137,7 @@ class BertIntermediate(nn.Cell):
     def __init__(self, config):
         super(BertIntermediate, self).__init__()
         self.dense = Dense(config.hidden_size, config.intermediate_size)
-        self.intermediate_act_fn = activation_map.get(config.hidden_act, nn.GELU(False))
+        self.intermediate_act_fn = activation_map.get(config.hidden_act, GELU())
 
     def construct(self, hidden_states):
         hidden_states = self.dense(hidden_states)
@@ -155,13 +148,13 @@ class BertOutput(nn.Cell):
     def __init__(self, config):
         super(BertOutput, self).__init__()
         self.dense = Dense(config.intermediate_size, config.hidden_size)
-        self.LayerNorm = nn.LayerNorm((config.hidden_size,), epsilon=1e-12)
+        self.layernorm = nn.LayerNorm((config.hidden_size,), epsilon=1e-12)
         self.dropout = nn.Dropout(1 - config.hidden_dropout_prob)
 
     def construct(self, hidden_states, input_tensor):
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
-        hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        hidden_states = self.layernorm(hidden_states + input_tensor)
         return hidden_states
 
 
