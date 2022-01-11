@@ -16,7 +16,7 @@ class PretrainedCell(nn.Cell):
         pass
 
     @classmethod
-    def load(cls, pretrained_model_name_or_path: Optional[Union[str, os.PathLike]], cache_dir=None):
+    def load(cls, pretrained_model_name_or_path: Optional[Union[str, os.PathLike]], cache_dir=None, from_huggingface=False):
         """
         Load a pre-trained checkpoint from a pre-trained model file or url,
         download and cache the pre-trained model file if model name in model list. 
