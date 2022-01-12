@@ -3,8 +3,10 @@ mindspore implementation of transformers
 
 ## Installation
 
+### Install from source
 ```bash
-pip install bert4ms
+git clone https://github.com/lvyufeng/bert4ms
+python setup.py install
 ```
 
 ## Quick Start
@@ -28,3 +30,4 @@ outputs = model(inputs)
 
 ## Why bert4ms?
 
+MindSpore has already provide the implementation of SOTA models in [ModelZoo](http://gitee.com/mindspore/models), but all checkpoints are trained from scratch which is not faithful. Since [Transformers](https://github.com/huggingface/transformers) has become a convenient toolkit to finish research or industry tasks, I develop this tool to transfer the checkpoint with code from [huggingface](https://huggingface.co/) to MindSpore. You can use it as same as Transformers to develop your own pretrained or finetuned models.

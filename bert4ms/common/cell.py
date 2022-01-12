@@ -30,9 +30,7 @@ class PretrainedCell(nn.Cell):
         # load config
         if not isinstance(config, PretrainedConfig):
             config_path = config if config is not None else pretrained_model_name_or_path
-            print(cls.config_class)
             config = cls.config_class.load(config_path)
-            print(config)
 
         if os.path.exists(pretrained_model_name_or_path):
             # File exists.

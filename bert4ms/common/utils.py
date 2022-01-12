@@ -62,3 +62,27 @@ def http_get(url: str, temp_file:IO):
             progress.update(len(chunk))
             temp_file.write(chunk)
     progress.close()
+
+def convert_state_dict(pth_file):
+    try:
+        import torch
+    except:
+        raise ImportError(f"'import torch' failed, please install torch by "
+                          f"`pip install torch` or instructions from 'https://pytorch.org'")
+
+    from mindspore import Tensor
+    from mindspore.train.serialization import save_checkpoint
+
+    ms_ckpt = []
+    state_dict = torch.load(pth_file)
+    # weight_map = build_weight_map('bert', 12)
+    for k, v in state_dict.items():
+        if 'embeddings' in k:
+            k = k.replace('weight', 'embedding_table')
+        if 'LayerNorm' in k:
+            k = k.replace('LayerNorm', 'layer_norm')
+        if 'self' in k:
+            k = k.replace('self', 'self_attn')
+        print(k)
+        ms_ckpt.append({'name': k, 'data':Tensor(v.numpy())})
+    save_checkpoint(ms_ckpt, pth_file + '.ckpt')    
