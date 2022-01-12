@@ -1,37 +1,64 @@
-import mindspore.ops as ops
-import mindspore.nn as nn
-import mindspore.common.dtype as mstype
-from mindspore import Tensor
+import os
+import requests
+import tempfile
+import logging
+import shutil
+from pathlib import Path
+from tqdm import tqdm
+from typing import IO
+
+try:
+    from pathlib import Path
+    BERT4MS_CACHE =  Path(os.getenv('BERT4MS_CACHE', Path.home() / '.bert4ms'))
+except (AttributeError, ImportError):
+    BERT4MS_CACHE =  Path(os.getenv('BERT4MS_CACHE', os.path.join(os.path.expanduser("~"), '.bert4ms')))
+
+CACHE_DIR = Path.home() / '.bert4ms'
+
+PRETRAINED_MODEL_ARCHIVE_MAP = {
+    'bert-base-uncased': "https://sharelist-lv.herokuapp.com/checkpoint/bert-base-uncased/model.ckpt"
+}
+
+CONFIG_ARCHIVE_MAP = {
+    'bert-base-uncased': 'https://sharelist-lv.herokuapp.com/checkpoint/bert-base-uncased/config.json'
+}
 
 
-class Erf(nn.Cell):
-    def __init__(self):
-        super().__init__()
-        self.v1 = Tensor(1.26551223, mstype.float32)
-        self.v2 = Tensor(1.00002368, mstype.float32)
-        self.v3 = Tensor(0.37409196, mstype.float32)
-        self.v4 = Tensor(0.09678418, mstype.float32)
-        self.v5 = Tensor(-0.18628806, mstype.float32)
-        self.v6 = Tensor(0.27886807, mstype.float32)
-        self.v7 = Tensor(-1.13520398, mstype.float32)
-        self.v8 = Tensor(1.48851587, mstype.float32)
-        self.v9 = Tensor(-0.82215223, mstype.float32)
-        self.v10 = Tensor(0.17087277, mstype.float32)
+def load_from_cache(name, url, cache_dir:str=None):
+    """
+    Given a URL, load the checkpoint from cache dir if it exists,
+    else, download it and save to cache dir and return the path
+    """
+    if cache_dir is None:
+        cache_dir = BERT4MS_CACHE
 
-    def construct(self, inputs):
-        inputs_dtype = inputs.dtype
-        intermidiate = 1.0 / (1.0 + 0.5 * ops.absolute(inputs))
-        ans = 1 - intermidiate * ops.exp(ops.neg_tensor(ops.pows(inputs, 2)) - self.v1.astype(inputs_dtype) +
-                                         intermidiate * (self.v2.astype(inputs_dtype) +
-                                         intermidiate * (self.v3.astype(inputs_dtype) +
-                                         intermidiate * (self.v4.astype(inputs_dtype) +
-                                         intermidiate * (self.v5.astype(inputs_dtype) +
-                                         intermidiate * (self.v6.astype(inputs_dtype) +
-                                         intermidiate * (self.v7.astype(inputs_dtype) +
-                                         intermidiate * (self.v8.astype(inputs_dtype) +
-                                         intermidiate * (self.v9.astype(inputs_dtype) +
-                                         intermidiate * (self.v10.astype(inputs_dtype)))))))))))
-        cond = ops.GreaterEqual()(inputs, 0.0)
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir)
+        
+    cache_path = os.path.join(cache_dir, name)
 
-        result = ops.Select()(cond, ans, -ans)
-        return result
+    # download the checkpoint if not exist
+    if not os.path.exists(cache_path):
+        with tempfile.NamedTemporaryFile() as temp_file:
+            logging.info(f"{name} not found in cache, downloading to {temp_file.name}")
+
+            http_get(url, temp_file)
+            temp_file.flush()
+            temp_file.seek(0)
+
+            logging.info(f"copying {temp_file.name} to cache at {cache_path}")
+            with open(cache_path, 'wb') as cache_file:
+                shutil.copyfileobj(temp_file, cache_file)
+    
+    return cache_path
+
+def http_get(url: str, temp_file:IO):
+    req = requests.get(url, stream=True)
+    content_length = req.headers.get('Content-Length')
+    total = int(content_length) if content_length is not None else None
+    progress = tqdm(unit='B', total=total)
+    for chunk in req.iter_content(chunk_size=1024):
+        if chunk:
+            progress.update(len(chunk))
+            temp_file.write(chunk)
+    progress.close()

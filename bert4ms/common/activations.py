@@ -4,7 +4,7 @@ import mindspore.ops as ops
 import mindspore.common.dtype as mstype
 from mindspore import Tensor
 from mindspore import context
-from .utils import Erf
+from .ops import Erf
 
 class GELU(nn.Cell):
     def __init__(self):

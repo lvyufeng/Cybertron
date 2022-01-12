@@ -59,10 +59,8 @@ class TestModelingBert(unittest.TestCase):
 
     def test_modeling_bert_with_ckpt_pynative(self):
         context.set_context(mode=context.PYNATIVE_MODE)
-        config = BertConfig(seq_length=512, vocab_size=30522)
-        model = BertModel(config)
+        model = BertModel.load('bert-base-uncased')
         model.set_train(False)
-        params = load_checkpoint('/home/lvyufeng/Downloads/bert-base-uncased/pytorch_model.bin.ckpt', model)
         input_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] + [0] * 500
         segment_ids = [1] * 12 + [0] * 500
 
@@ -70,7 +68,7 @@ class TestModelingBert(unittest.TestCase):
         ms_segment_ids = Tensor(segment_ids, mindspore.int32).reshape(1, -1)
         outputs, pooled = model(ms_input_ids, ms_segment_ids)
         
-        pt_model = ptBertModel.from_pretrained('/home/lvyufeng/Downloads/bert-base-uncased.tar.gz')
+        pt_model = ptBertModel.from_pretrained('bert-base-uncased')
         pt_model.eval()
         pt_input_ids = torch.IntTensor(input_ids).reshape(1, -1)
         pt_segment_ids = torch.IntTensor(segment_ids).reshape(1, -1)

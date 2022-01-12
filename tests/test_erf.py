@@ -1,7 +1,7 @@
 import unittest
 
 from mindspore.ops.primitive import constexpr
-from bert4ms.common.utils import Erf
+from bert4ms.common.ops import Erf
 import mindspore
 import numpy as np
 from mindspore import Tensor, context

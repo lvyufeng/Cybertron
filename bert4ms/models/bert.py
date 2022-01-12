@@ -4,16 +4,17 @@ import mindspore.numpy as mnp
 import mindspore.common.dtype as mstype
 from ..common.activations import activation_map, GELU
 from ..common.cell import PretrainedCell
+from ..common.config import PretrainedConfig
 from ..common.layers import Dense, Embedding
 from ..common.tokenizers import FullTokenizer
 from mindspore import ms_function, Tensor
 
-class BertConfig:
+class BertConfig(PretrainedConfig):
     """Configuration for BERT
     """
     def __init__(self,
                 seq_length=128,
-                vocab_size=32000,
+                vocab_size=30522,
                 hidden_size=768,
                 num_hidden_layers=12,
                 num_attention_heads=12,
@@ -199,7 +200,9 @@ class BertPooler(nn.Cell):
         pooled_output = self.dense(first_token_tensor)
         return pooled_output
 
-class BertModel(nn.Cell):
+class BertModel(PretrainedCell):
+    """"""
+    config_class = BertConfig
     def __init__(self, config):
         super().__init__(config)
         self.embeddings = BertEmbeddings(config)
