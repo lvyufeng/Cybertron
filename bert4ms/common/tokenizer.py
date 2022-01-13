@@ -5,6 +5,14 @@ import six
 import os
 from typing import Callable, Optional, Union
 
+class PreTrainedTokenizer:
+    def __init__(self) -> None:
+        pass
+
+    @classmethod
+    def load(cls, path):
+        pass
+
 class FullTokenizer:
     """Runs end-to-end tokenziation."""
 

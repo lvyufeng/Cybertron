@@ -10,7 +10,7 @@ from ..common.layers import Dense, Embedding
 from ..configs.bert import BertConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
-    'bert-base-uncased': "https://sharelist-lv.herokuapp.com/checkpoint/bert-base-uncased/model.ckpt"
+    'bert-base-uncased': "https://sharelist-lv.herokuapp.com/models/bert/bert-base-uncased/model.ckpt"
 }
 
 class BertEmbeddings(nn.Cell):
@@ -174,11 +174,11 @@ class BertEncoder(nn.Cell):
     def construct(self, hidden_states, attention_mask=None, head_mask=None):
         all_hidden_states = ()
         all_attentions = ()
-        for layer_module in self.layer:
+        for i, layer_module in enumerate(self.layer):
             if self.output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            layer_outputs = layer_module(hidden_states, attention_mask)
+            layer_outputs = layer_module(hidden_states, attention_mask, head_mask[i])
             hidden_states = layer_outputs[0]
 
             if self.output_attentions:
@@ -211,12 +211,12 @@ class BertPredictionHeadTransform(nn.Cell):
         super(BertPredictionHeadTransform, self).__init__()
         self.dense = Dense(config.hidden_size, config.hidden_size)
         self.transform_act_fn = activation_map.get(config.hidden_act, GELU())
-        self.LayerNorm = nn.LayerNorm((config.hidden_size,), eps=config.layer_norm_eps)
+        self.layer_norm = nn.LayerNorm((config.hidden_size,), epsilon=config.layer_norm_eps)
 
     def construct(self, hidden_states):
         hidden_states = self.dense(hidden_states)
         hidden_states = self.transform_act_fn(hidden_states)
-        hidden_states = self.LayerNorm(hidden_states)
+        hidden_states = self.layer_norm(hidden_states)
         return hidden_states
 
 class BertLMPredictionHead(nn.Cell):
@@ -316,6 +316,7 @@ class BertForPretraining(BertPretrainedCell):
         self.cls.predictions.decoder.weight = self.bert.embeddings.word_embeddings.embedding_table
     
         self.loss_fct = nn.SoftmaxCrossEntropyWithLogits(True, 'mean')
+
     def construct(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None,
                   masked_lm_labels=None, next_sentence_label=None):
         outputs = self.bert(
