@@ -10,7 +10,7 @@ from ..common.layers import Dense, Embedding
 from ..configs.bert import BertConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
-    'bert-base-uncased': "https://sharelist-lv.herokuapp.com/models/bert/bert-base-uncased/model.ckpt"
+    'bert-base-uncased': "https://sharelist-lv.herokuapp.com/checkpoint/bert/bert-base-uncased/model.ckpt"
 }
 
 class BertEmbeddings(nn.Cell):
