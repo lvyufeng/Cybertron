@@ -3,11 +3,12 @@ import os
 import mindspore.nn as nn
 from mindspore.train.serialization import load_checkpoint, load_param_into_net
 from typing import Optional, Union
-from .utils import PRETRAINED_MODEL_ARCHIVE_MAP, load_from_cache
+from .utils import load_from_cache
 from .config import PretrainedConfig
 
 class PretrainedCell(nn.Cell):
     """"""
+    pretrained_model_archive = {}
     config_class = None
     def __init__(self, config, *args, **kwargs):
         super().__init__()
@@ -35,9 +36,9 @@ class PretrainedCell(nn.Cell):
         if os.path.exists(pretrained_model_name_or_path):
             # File exists.
             model_file = pretrained_model_name_or_path
-        elif pretrained_model_name_or_path in PRETRAINED_MODEL_ARCHIVE_MAP:
+        elif pretrained_model_name_or_path in cls.pretrained_model_archive:
             logging.info("The checkpoint file not found, start to download.")
-            model_url = PRETRAINED_MODEL_ARCHIVE_MAP[pretrained_model_name_or_path]
+            model_url = cls.pretrained_model_archive[pretrained_model_name_or_path]
             model_file = load_from_cache(pretrained_model_name_or_path + '.ckpt', model_url)
         else:
             # Something unknown

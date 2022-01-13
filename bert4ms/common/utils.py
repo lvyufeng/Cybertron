@@ -15,15 +15,6 @@ except (AttributeError, ImportError):
 
 CACHE_DIR = Path.home() / '.bert4ms'
 
-PRETRAINED_MODEL_ARCHIVE_MAP = {
-    'bert-base-uncased': "https://sharelist-lv.herokuapp.com/checkpoint/bert-base-uncased/model.ckpt"
-}
-
-CONFIG_ARCHIVE_MAP = {
-    'bert-base-uncased': 'https://sharelist-lv.herokuapp.com/checkpoint/bert-base-uncased/config.json'
-}
-
-
 def load_from_cache(name, url, cache_dir:str=None):
     """
     Given a URL, load the checkpoint from cache dir if it exists,
@@ -85,4 +76,4 @@ def convert_state_dict(pth_file):
             k = k.replace('self', 'self_attn')
         print(k)
         ms_ckpt.append({'name': k, 'data':Tensor(v.numpy())})
-    save_checkpoint(ms_ckpt, pth_file + '.ckpt')    
+    save_checkpoint(ms_ckpt, pth_file + '.ckpt')
