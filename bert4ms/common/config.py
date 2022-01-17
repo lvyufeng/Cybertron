@@ -13,13 +13,14 @@ class PretrainedConfig:
 
     @classmethod
     def load(cls, pretrained_model_name_or_path, **kwargs):
+        force_download = kwargs.pop('force_download', False)
         if os.path.exists(pretrained_model_name_or_path):
             # File exists.
             config_file = pretrained_model_name_or_path
         elif pretrained_model_name_or_path in cls.pretrained_config_archive:
             logging.info("The checkpoint file not found, start to download.")
             config_url = cls.pretrained_config_archive[pretrained_model_name_or_path]
-            config_file = load_from_cache(pretrained_model_name_or_path + '.json', config_url)
+            config_file = load_from_cache(pretrained_model_name_or_path + '.json', config_url, force_download=force_download)
         else:
             # Something unknown
             raise ValueError(f"unable to parse {pretrained_model_name_or_path} as a local path or model name")

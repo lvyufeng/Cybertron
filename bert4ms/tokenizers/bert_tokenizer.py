@@ -1,7 +1,7 @@
 from ..common.tokenizer import PreTrainedTokenizer, FullTokenizer, WordpieceTokenizer
 
 PRETRAINED_VOCAB_FILES = {
-    'bert-base-uncased': "https://sharelist-lv.herokuapp.com/checkpoint/bert/bert-base-uncased/vocab.txt?preview",
+    'bert-base-uncased': "https://sharelist-lv.herokuapp.com/models/bert/bert-base-uncased/vocab.txt?preview",
 }
 
 PRETRAINED_POSITIONAL_EMBEDDINGS_SIZES = {

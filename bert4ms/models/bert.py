@@ -10,7 +10,11 @@ from ..common.layers import Dense, Embedding
 from ..configs.bert import BertConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
-    'bert-base-uncased': "https://sharelist-lv.herokuapp.com/checkpoint/bert/bert-base-uncased/model.ckpt"
+    'bert-base-uncased': "https://sharelist-lv.herokuapp.com/models/bert/bert-base-uncased/model.ckpt"
+}
+
+PYTORCH_PRETRAINED_MODEL_ARCHIVE_MAP = {
+    'bert-base-uncased': "https://huggingface.co/bert-base-uncased/resolve/main/pytorch_model.bin"
 }
 
 class BertEmbeddings(nn.Cell):
@@ -268,6 +272,7 @@ class BertPreTrainingHeads(nn.Cell):
 
 class BertPretrainedCell(PretrainedCell):
     pretrained_model_archive = PRETRAINED_MODEL_ARCHIVE_MAP
+    pytorch_pretrained_model_archive = PYTORCH_PRETRAINED_MODEL_ARCHIVE_MAP
     config_class = BertConfig
 
 class BertModel(BertPretrainedCell):

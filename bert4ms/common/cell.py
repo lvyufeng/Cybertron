@@ -3,12 +3,13 @@ import os
 import mindspore.nn as nn
 from mindspore.train.serialization import load_checkpoint, load_param_into_net
 from typing import Optional, Union
-from .utils import load_from_cache
+from .utils import cached_model
 from .config import PretrainedConfig
 
 class PretrainedCell(nn.Cell):
     """"""
     pretrained_model_archive = {}
+    pytorch_pretrained_model_archive = {}
     config_class = None
     def __init__(self, config, *args, **kwargs):
         super().__init__()
@@ -28,21 +29,20 @@ class PretrainedCell(nn.Cell):
             cache_dir:
         """
         config = kwargs.pop("config", None)
+        force_download = kwargs.pop('force_download', False)
+        from_torch = kwargs.pop('from_torch', False)
         # load config
         if not isinstance(config, PretrainedConfig):
             config_path = config if config is not None else pretrained_model_name_or_path
             config = cls.config_class.load(config_path)
 
-        if os.path.exists(pretrained_model_name_or_path):
-            # File exists.
-            model_file = pretrained_model_name_or_path
-        elif pretrained_model_name_or_path in cls.pretrained_model_archive:
-            logging.info("The checkpoint file not found, start to download.")
-            model_url = cls.pretrained_model_archive[pretrained_model_name_or_path]
-            model_file = load_from_cache(pretrained_model_name_or_path + '.ckpt', model_url)
+        if from_torch:
+            model_file = cached_model(pretrained_model_name_or_path, cls.pytorch_pretrained_model_archive,
+                                      from_torch, force_download)
         else:
-            # Something unknown
-            raise ValueError(f"unable to parse {pretrained_model_name_or_path} as a local path or model name")
+            model_file = cached_model(pretrained_model_name_or_path, cls.pretrained_model_archive,
+                                      from_torch, force_download)
+
         # instantiate model
         model = cls(config, *args, **kwargs)
         # load ckpt

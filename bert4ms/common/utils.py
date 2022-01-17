@@ -15,7 +15,7 @@ except (AttributeError, ImportError):
 
 CACHE_DIR = Path.home() / '.bert4ms'
 
-def load_from_cache(name, url, cache_dir:str=None):
+def load_from_cache(name, url, cache_dir:str=None, force_download=False):
     """
     Given a URL, load the checkpoint from cache dir if it exists,
     else, download it and save to cache dir and return the path
@@ -29,7 +29,7 @@ def load_from_cache(name, url, cache_dir:str=None):
     cache_path = os.path.join(cache_dir, name)
 
     # download the checkpoint if not exist
-    if not os.path.exists(cache_path):
+    if not os.path.exists(cache_path) or force_download:
         with tempfile.NamedTemporaryFile() as temp_file:
             logging.info(f"{name} not found in cache, downloading to {temp_file.name}")
 
@@ -64,6 +64,7 @@ def convert_state_dict(pth_file):
     from mindspore import Tensor
     from mindspore.train.serialization import save_checkpoint
 
+    logging.info('Starting checkpoint conversion.')
     ms_ckpt = []
     state_dict = torch.load(pth_file)
     # weight_map = build_weight_map('bert', 12)
@@ -76,4 +77,31 @@ def convert_state_dict(pth_file):
             k = k.replace('self', 'self_attn')
         print(k)
         ms_ckpt.append({'name': k, 'data':Tensor(v.numpy())})
-    save_checkpoint(ms_ckpt, pth_file + '.ckpt')
+    ms_ckpt_path = pth_file.replace('.bin','.ckpt')
+    try:
+        save_checkpoint(ms_ckpt, ms_ckpt_path)
+    except:
+        raise RuntimeError(f'Save checkpoint to {ms_ckpt_path} failed, please checkout the path.')
+    return ms_ckpt_path
+
+def cached_model(pretrained_model_name_or_path, pretrained_model_archive, from_torch, force_download):
+    if os.path.exists(pretrained_model_name_or_path):
+        # File exists.
+        if not from_torch:
+            model_file = os.path.join(pretrained_model_name_or_path, 'model.ckpt')
+        else:
+            model_file = os.path.join(pretrained_model_name_or_path, 'pytorch_model.bin')
+        assert os.path.isfile(model_file)
+    elif pretrained_model_name_or_path in pretrained_model_archive:
+        logging.info("The checkpoint file not found, start to download.")
+        model_url = pretrained_model_archive[pretrained_model_name_or_path]
+        if not from_torch:
+            model_file = load_from_cache(pretrained_model_name_or_path + '.ckpt', model_url, force_download=force_download)
+        else:
+            torch_model_file = load_from_cache(pretrained_model_name_or_path + '.bin', model_url, force_download=force_download)
+            model_file = convert_state_dict(torch_model_file)
+    else:
+        # Something unknown
+        raise ValueError(f"unable to parse {pretrained_model_name_or_path} as a local path or model name")
+
+    return model_file

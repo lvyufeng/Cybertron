@@ -2,7 +2,7 @@ import json
 from ..common.config import PretrainedConfig
 
 CONFIG_ARCHIVE_MAP = {
-    'bert-base-uncased': 'https://sharelist-lv.herokuapp.com/checkpoint/bert/bert-base-uncased/config.json'
+    'bert-base-uncased': 'https://sharelist-lv.herokuapp.com/models/bert/bert-base-uncased/config.json'
 }
 
 class BertConfig(PretrainedConfig):

@@ -9,3 +9,9 @@ class TestLoadFromCache(unittest.TestCase):
         url = CONFIG_ARCHIVE_MAP['bert-base-uncased']
         cache_path = load_from_cache(name + '.json', url)
         assert os.path.exists(cache_path)
+    
+    def test_load_from_cache_default_path_force_download(self):
+        name = 'bert-base-uncased'
+        url = CONFIG_ARCHIVE_MAP['bert-base-uncased']
+        cache_path = load_from_cache(name + '.json', url, force_download=True)
+        assert os.path.exists(cache_path)
