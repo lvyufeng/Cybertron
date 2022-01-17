@@ -130,3 +130,5 @@ dmypy.json
 
 # mindspore output
 analyze_fail*.dat
+
+convert.py

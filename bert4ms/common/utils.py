@@ -14,6 +14,7 @@ except (AttributeError, ImportError):
     BERT4MS_CACHE =  Path(os.getenv('BERT4MS_CACHE', os.path.join(os.path.expanduser("~"), '.bert4ms')))
 
 CACHE_DIR = Path.home() / '.bert4ms'
+HUGGINGFACE_BASE_URL = 'https://huggingface.co/{}/resolve/main/pytorch_model.bin'
 
 def load_from_cache(name, url, cache_dir:str=None, force_download=False):
     """
@@ -29,7 +30,10 @@ def load_from_cache(name, url, cache_dir:str=None, force_download=False):
     cache_path = os.path.join(cache_dir, name)
 
     # download the checkpoint if not exist
-    if not os.path.exists(cache_path) or force_download:
+    ckpt_exist = os.path.exists(cache_path)
+    if not ckpt_exist or force_download:
+        if ckpt_exist:
+            os.remove(cache_path)
         with tempfile.NamedTemporaryFile() as temp_file:
             logging.info(f"{name} not found in cache, downloading to {temp_file.name}")
 
@@ -66,17 +70,21 @@ def convert_state_dict(pth_file):
 
     logging.info('Starting checkpoint conversion.')
     ms_ckpt = []
-    state_dict = torch.load(pth_file)
-    # weight_map = build_weight_map('bert', 12)
+    state_dict = torch.load(pth_file, map_location=torch.device('cpu'))
+
     for k, v in state_dict.items():
-        if 'embeddings' in k:
-            k = k.replace('weight', 'embedding_table')
         if 'LayerNorm' in k:
             k = k.replace('LayerNorm', 'layer_norm')
+            if '.weight' in k:
+                k = k.replace('.weight', '.gamma')
+            if '.bias' in k:
+                k = k.replace('.bias', '.beta')
+        if 'embeddings' in k:
+            k = k.replace('weight', 'embedding_table')
         if 'self' in k:
             k = k.replace('self', 'self_attn')
-        print(k)
         ms_ckpt.append({'name': k, 'data':Tensor(v.numpy())})
+
     ms_ckpt_path = pth_file.replace('.bin','.ckpt')
     try:
         save_checkpoint(ms_ckpt, ms_ckpt_path)
@@ -87,17 +95,15 @@ def convert_state_dict(pth_file):
 def cached_model(pretrained_model_name_or_path, pretrained_model_archive, from_torch, force_download):
     if os.path.exists(pretrained_model_name_or_path):
         # File exists.
-        if not from_torch:
-            model_file = os.path.join(pretrained_model_name_or_path, 'model.ckpt')
-        else:
-            model_file = os.path.join(pretrained_model_name_or_path, 'pytorch_model.bin')
+        model_file = os.path.join(pretrained_model_name_or_path)
         assert os.path.isfile(model_file)
     elif pretrained_model_name_or_path in pretrained_model_archive:
         logging.info("The checkpoint file not found, start to download.")
-        model_url = pretrained_model_archive[pretrained_model_name_or_path]
         if not from_torch:
+            model_url = pretrained_model_archive[pretrained_model_name_or_path]
             model_file = load_from_cache(pretrained_model_name_or_path + '.ckpt', model_url, force_download=force_download)
         else:
+            model_url = HUGGINGFACE_BASE_URL.format(pretrained_model_name_or_path)
             torch_model_file = load_from_cache(pretrained_model_name_or_path + '.bin', model_url, force_download=force_download)
             model_file = convert_state_dict(torch_model_file)
     else:

@@ -9,7 +9,7 @@ from .config import PretrainedConfig
 class PretrainedCell(nn.Cell):
     """"""
     pretrained_model_archive = {}
-    pytorch_pretrained_model_archive = {}
+    pytorch_pretrained_model_archive_list = []
     config_class = None
     def __init__(self, config, *args, **kwargs):
         super().__init__()
@@ -37,7 +37,7 @@ class PretrainedCell(nn.Cell):
             config = cls.config_class.load(config_path)
 
         if from_torch:
-            model_file = cached_model(pretrained_model_name_or_path, cls.pytorch_pretrained_model_archive,
+            model_file = cached_model(pretrained_model_name_or_path, cls.pytorch_pretrained_model_archive_list,
                                       from_torch, force_download)
         else:
             model_file = cached_model(pretrained_model_name_or_path, cls.pretrained_model_archive,
@@ -50,6 +50,7 @@ class PretrainedCell(nn.Cell):
             param_dict = load_checkpoint(model_file)
         except:
             raise ValueError(f"File {model_file} is not a checkpoint file, please check the path.")
+
         param_not_load = load_param_into_net(model, param_dict)
         if param_not_load:
             raise KeyError("The following weights in model are not found: {param_not_load}")

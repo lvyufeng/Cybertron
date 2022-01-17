@@ -10,12 +10,39 @@ from ..common.layers import Dense, Embedding
 from ..configs.bert import BertConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
-    'bert-base-uncased': "https://sharelist-lv.herokuapp.com/models/bert/bert-base-uncased/model.ckpt"
+    'bert-base-uncased': "https://sharelist-lv.herokuapp.com/models/bert/bert-base-uncased.ckpt",
+    "bert-large-uncased": "https://sharelist-lv.herokuapp.com/models/bert/bert-large-uncased.ckpt",
+    "bert-base-cased": "https://sharelist-lv.herokuapp.com/models/bert/bert-base-cased.ckpt",
+    "bert-large-cased": "https://sharelist-lv.herokuapp.com/models/bert/bert-large-cased.ckpt",
+    "bert-base-multilingual-uncased": "https://sharelist-lv.herokuapp.com/models/bert/bert-base-multilingual-uncased.ckpt",
+    "bert-base-multilingual-cased": "https://sharelist-lv.herokuapp.com/models/bert/bert-base-multilingual-cased.ckpt",
+    "bert-base-chinese": "https://sharelist-lv.herokuapp.com/models/bert/bert-base-chinese.ckpt"
 }
 
-PYTORCH_PRETRAINED_MODEL_ARCHIVE_MAP = {
-    'bert-base-uncased': "https://huggingface.co/bert-base-uncased/resolve/main/pytorch_model.bin"
-}
+PYTORCH_PRETRAINED_MODEL_ARCHIVE_LIST = [
+    "bert-base-uncased",
+    "bert-large-uncased",
+    "bert-base-cased",
+    "bert-large-cased",
+    "bert-base-multilingual-uncased",
+    "bert-base-multilingual-cased",
+    "bert-base-chinese",
+    "bert-base-german-cased",
+    "bert-large-uncased-whole-word-masking",
+    "bert-large-cased-whole-word-masking",
+    "bert-large-uncased-whole-word-masking-finetuned-squad",
+    "bert-large-cased-whole-word-masking-finetuned-squad",
+    "bert-base-cased-finetuned-mrpc",
+    "bert-base-german-dbmdz-cased",
+    "bert-base-german-dbmdz-uncased",
+    "cl-tohoku/bert-base-japanese",
+    "cl-tohoku/bert-base-japanese-whole-word-masking",
+    "cl-tohoku/bert-base-japanese-char",
+    "cl-tohoku/bert-base-japanese-char-whole-word-masking",
+    "TurkuNLP/bert-base-finnish-cased-v1",
+    "TurkuNLP/bert-base-finnish-uncased-v1",
+    "wietsedv/bert-base-dutch-cased",
+]
 
 class BertEmbeddings(nn.Cell):
     """Embeddings for BERT, include word, position and token_type
@@ -272,7 +299,7 @@ class BertPreTrainingHeads(nn.Cell):
 
 class BertPretrainedCell(PretrainedCell):
     pretrained_model_archive = PRETRAINED_MODEL_ARCHIVE_MAP
-    pytorch_pretrained_model_archive = PYTORCH_PRETRAINED_MODEL_ARCHIVE_MAP
+    pytorch_pretrained_model_archive_list = PYTORCH_PRETRAINED_MODEL_ARCHIVE_LIST
     config_class = BertConfig
 
 class BertModel(BertPretrainedCell):
