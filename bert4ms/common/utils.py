@@ -26,7 +26,8 @@ def load_from_cache(name, url, cache_dir:str=None, force_download=False):
 
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir)
-        
+    
+    name = name.replace('/', '_')
     cache_path = os.path.join(cache_dir, name)
 
     # download the checkpoint if not exist
@@ -83,13 +84,15 @@ def convert_state_dict(pth_file):
             k = k.replace('weight', 'embedding_table')
         if 'self' in k:
             k = k.replace('self', 'self_attn')
-        ms_ckpt.append({'name': k, 'data':Tensor(v.numpy())})
+        ms_ckpt.append({'name': k, 'data': Tensor(v.numpy())})
 
     ms_ckpt_path = pth_file.replace('.bin','.ckpt')
-    try:
-        save_checkpoint(ms_ckpt, ms_ckpt_path)
-    except:
-        raise RuntimeError(f'Save checkpoint to {ms_ckpt_path} failed, please checkout the path.')
+    if not os.path.exists(ms_ckpt_path):
+        try:
+            save_checkpoint(ms_ckpt, ms_ckpt_path)
+        except:
+            raise RuntimeError(f'Save checkpoint to {ms_ckpt_path} failed, please checkout the path.')
+
     return ms_ckpt_path
 
 def cached_model(pretrained_model_name_or_path, pretrained_model_archive, from_torch, force_download):

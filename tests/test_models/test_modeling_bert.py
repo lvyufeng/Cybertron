@@ -65,14 +65,14 @@ class TestModelingBert(unittest.TestCase):
 
     def test_modeling_bert_with_ckpt_pynative(self):
         context.set_context(mode=context.PYNATIVE_MODE)
-        model = BertModel.load('bert-base-uncased', force_download=True)
+        model = BertModel.load('bert-base-uncased')
         model.set_train(False)
         input_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] + [0] * 500
 
         ms_input_ids = Tensor(input_ids, mindspore.int32).reshape(1, -1)
         outputs, pooled = model(ms_input_ids)
         
-        pt_model = ptBertModel.from_pretrained('bert-base-uncased', force_download=True)
+        pt_model = ptBertModel.from_pretrained('bert-base-uncased')
         pt_model.eval()
         pt_input_ids = torch.IntTensor(input_ids).reshape(1, -1)
         outputs_pt, pooled_pt = pt_model(input_ids=pt_input_ids)

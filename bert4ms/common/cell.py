@@ -35,16 +35,17 @@ class PretrainedCell(nn.Cell):
         if not isinstance(config, PretrainedConfig):
             config_path = config if config is not None else pretrained_model_name_or_path
             config = cls.config_class.load(config_path)
+        
+        # instantiate model
+        model = cls(config, *args, **kwargs)
 
+        # download ckpt
         if from_torch:
             model_file = cached_model(pretrained_model_name_or_path, cls.pytorch_pretrained_model_archive_list,
                                       from_torch, force_download)
         else:
             model_file = cached_model(pretrained_model_name_or_path, cls.pretrained_model_archive,
                                       from_torch, force_download)
-
-        # instantiate model
-        model = cls(config, *args, **kwargs)
         # load ckpt
         try:
             param_dict = load_checkpoint(model_file)
@@ -52,8 +53,8 @@ class PretrainedCell(nn.Cell):
             raise ValueError(f"File {model_file} is not a checkpoint file, please check the path.")
 
         param_not_load = load_param_into_net(model, param_dict)
-        if param_not_load:
-            raise KeyError("The following weights in model are not found: {param_not_load}")
+        if len(param_not_load) == len(model.trainable_params()):
+            raise KeyError(f"The following weights in model are not found: {param_not_load}")
         
         return model
 

@@ -20,7 +20,7 @@ bert4ms提供类似于Transformers的编码体验，可以直接使用模型名�
 from bert4ms import BertTokenizer, BertModel
 
 tokenizer = BertTokenizer.load('bert-base-uncased')
-model = BertModel.load('bert-base-uncased'， force_download=True)
+model = BertModel.load('bert-base-uncased', force_download=True)
 model.set_train(False)
 
 # get tokenized inputs
