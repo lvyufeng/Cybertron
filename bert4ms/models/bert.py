@@ -370,3 +370,30 @@ class BertForPretraining(BertPretrainedCell):
             total_loss = masked_lm_loss + next_sentence_loss
             outputs = (total_loss,) + outputs
         return outputs
+
+class BertForMaskedLM(BertPretrainedCell):
+    def __init__(self, config, *args, **kwargs):
+        super().__init__(config, *args, **kwargs)
+        self.bert = BertModel(config)
+        self.cls = BertOnlyMLMHead(config)
+
+        self.cls.predictions.decoder.weight = self.bert.embeddings.word_embeddings.embedding_table
+
+    def construct(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None,
+                  masked_lm_labels=None):
+        outputs = self.bert(input_ids,
+                            attention_mask=attention_mask,
+                            token_type_ids=token_type_ids,
+                            position_ids=position_ids,
+                            head_mask=head_mask)
+        
+        sequence_output = outputs[0]
+        prediction_scores = self.cls(sequence_output)
+
+        outputs = (prediction_scores,) + outputs[:2]
+        if masked_lm_labels is not None:
+            loss_fct = nn.SoftmaxCrossEntropyWithLogits(True, 'mean')
+            masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1))
+            outputs = (masked_lm_loss,) + outputs
+
+        return outputs
