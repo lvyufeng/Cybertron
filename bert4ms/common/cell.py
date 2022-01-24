@@ -3,7 +3,7 @@ import os
 import mindspore.nn as nn
 from mindspore.train.serialization import load_checkpoint, load_param_into_net
 from typing import Optional, Union
-from .utils import cached_model
+from .utils import load_from_cache, HUGGINGFACE_BASE_URL
 from .config import PretrainedConfig
 
 class PretrainedCell(nn.Cell):
@@ -11,6 +11,8 @@ class PretrainedCell(nn.Cell):
     pretrained_model_archive = {}
     pytorch_pretrained_model_archive_list = []
     config_class = None
+    convert_torch_to_mindspore = lambda torch_model_file: None
+
     def __init__(self, config, *args, **kwargs):
         super().__init__()
         self.config = config
@@ -40,12 +42,23 @@ class PretrainedCell(nn.Cell):
         model = cls(config, *args, **kwargs)
 
         # download ckpt
-        if from_torch:
-            model_file = cached_model(pretrained_model_name_or_path, cls.pytorch_pretrained_model_archive_list,
-                                      from_torch, force_download)
+        if os.path.exists(pretrained_model_name_or_path):
+            # File exists.
+            model_file = os.path.join(pretrained_model_name_or_path)
+            assert os.path.isfile(model_file)
+        elif pretrained_model_name_or_path in cls.pretrained_model_archive and not from_torch:
+            logging.info("The checkpoint file not found, start to download.")
+            model_url = cls.pretrained_model_archive[pretrained_model_name_or_path]
+            model_file = load_from_cache(pretrained_model_name_or_path + '.ckpt', model_url, force_download=force_download)
+        elif pretrained_model_name_or_path in cls.pytorch_pretrained_model_archive_list:
+            logging.info("The checkpoint file not found in archive list, start to download from torch.")
+            model_url = HUGGINGFACE_BASE_URL.format(pretrained_model_name_or_path)
+            torch_model_file = load_from_cache(pretrained_model_name_or_path + '.bin', model_url, force_download=force_download)
+            model_file = cls.convert_torch_to_mindspore(torch_model_file)
         else:
-            model_file = cached_model(pretrained_model_name_or_path, cls.pretrained_model_archive,
-                                      from_torch, force_download)
+            # Something unknown
+            raise ValueError(f"unable to parse {pretrained_model_name_or_path} as a local path or model name")
+
         # load ckpt
         try:
             param_dict = load_checkpoint(model_file)
