@@ -4,6 +4,9 @@ from .bert import BertEmbeddings, BertModel
 from ..configs.roberta import RobertaConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
+    "roberta-base": "https://sharelist-lv.herokuapp.com/models/roberta/roberta-base.ckpt",
+    "roberta-large": "https://sharelist-lv.herokuapp.com/models/roberta/roberta-large.ckpt",
+    "roberta-large-mnli": "https://sharelist-lv.herokuapp.com/models/roberta/roberta-large-mnli.ckpt",
 }
 
 PYTORCH_PRETRAINED_MODEL_ARCHIVE_LIST = [

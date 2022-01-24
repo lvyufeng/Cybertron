@@ -159,7 +159,7 @@ class BertIntermediate(nn.Cell):
     def __init__(self, config):
         super(BertIntermediate, self).__init__()
         self.dense = Dense(config.hidden_size, config.intermediate_size)
-        self.intermediate_act_fn = activation_map.get(config.hidden_act, GELU())
+        self.intermediate_act_fn = activation_map.get(config.hidden_act, GELU(False))
 
     def construct(self, hidden_states):
         hidden_states = self.dense(hidden_states)
@@ -241,7 +241,7 @@ class BertPredictionHeadTransform(nn.Cell):
     def __init__(self, config):
         super(BertPredictionHeadTransform, self).__init__()
         self.dense = Dense(config.hidden_size, config.hidden_size)
-        self.transform_act_fn = activation_map.get(config.hidden_act, GELU())
+        self.transform_act_fn = activation_map.get(config.hidden_act, GELU(False))
         self.layer_norm = nn.LayerNorm((config.hidden_size,), epsilon=config.layer_norm_eps)
 
     def construct(self, hidden_states):
