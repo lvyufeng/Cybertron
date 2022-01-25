@@ -94,23 +94,3 @@ def convert_state_dict(pth_file):
             raise RuntimeError(f'Save checkpoint to {ms_ckpt_path} failed, please checkout the path.')
 
     return ms_ckpt_path
-
-def cached_model(pretrained_model_name_or_path, pretrained_model_archive, from_torch, force_download):
-    if os.path.exists(pretrained_model_name_or_path):
-        # File exists.
-        model_file = os.path.join(pretrained_model_name_or_path)
-        assert os.path.isfile(model_file)
-    elif pretrained_model_name_or_path in pretrained_model_archive:
-        logging.info("The checkpoint file not found, start to download.")
-        if not from_torch:
-            model_url = pretrained_model_archive[pretrained_model_name_or_path]
-            model_file = load_from_cache(pretrained_model_name_or_path + '.ckpt', model_url, force_download=force_download)
-        else:
-            model_url = HUGGINGFACE_BASE_URL.format(pretrained_model_name_or_path)
-            torch_model_file = load_from_cache(pretrained_model_name_or_path + '.bin', model_url, force_download=force_download)
-            model_file = convert_state_dict(torch_model_file)
-    else:
-        # Something unknown
-        raise ValueError(f"unable to parse {pretrained_model_name_or_path} as a local path or model name")
-
-    return model_file

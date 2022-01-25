@@ -5,7 +5,6 @@ import numpy as np
 from bert4ms.models import BertModel, BertConfig, BertForPretraining
 from mindspore import Tensor
 from mindspore import context
-from mindspore.train.serialization import load_checkpoint
 from transformers import BertModel as ptBertModel
 
 class TestModelingBert(unittest.TestCase):

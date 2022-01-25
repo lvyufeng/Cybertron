@@ -1,8 +1,10 @@
+import os
+import logging
 import mindspore.nn as nn
 import mindspore.ops as ops
 import mindspore.numpy as mnp
 import mindspore.common.dtype as mstype
-from mindspore import Tensor, Parameter
+from mindspore import Parameter
 from mindspore.common.initializer import initializer
 from ..common.activations import activation_map, GELU
 from ..common.cell import PretrainedCell
@@ -43,6 +45,42 @@ PYTORCH_PRETRAINED_MODEL_ARCHIVE_LIST = [
     "TurkuNLP/bert-base-finnish-uncased-v1",
     "wietsedv/bert-base-dutch-cased",
 ]
+
+def torch_to_mindspore(pth_file):
+    try:
+        import torch
+    except:
+        raise ImportError(f"'import torch' failed, please install torch by "
+                          f"`pip install torch` or instructions from 'https://pytorch.org'")
+
+    from mindspore import Tensor
+    from mindspore.train.serialization import save_checkpoint
+
+    logging.info('Starting checkpoint conversion.')
+    ms_ckpt = []
+    state_dict = torch.load(pth_file, map_location=torch.device('cpu'))
+
+    for k, v in state_dict.items():
+        if 'LayerNorm' in k:
+            k = k.replace('LayerNorm', 'layer_norm')
+            if '.weight' in k:
+                k = k.replace('.weight', '.gamma')
+            if '.bias' in k:
+                k = k.replace('.bias', '.beta')
+        if 'embeddings' in k:
+            k = k.replace('weight', 'embedding_table')
+        if 'self' in k:
+            k = k.replace('self', 'self_attn')
+        ms_ckpt.append({'name': k, 'data': Tensor(v.numpy())})
+
+    ms_ckpt_path = pth_file.replace('.bin','.ckpt')
+    if not os.path.exists(ms_ckpt_path):
+        try:
+            save_checkpoint(ms_ckpt, ms_ckpt_path)
+        except:
+            raise RuntimeError(f'Save checkpoint to {ms_ckpt_path} failed, please checkout the path.')
+
+    return ms_ckpt_path
 
 class BertEmbeddings(nn.Cell):
     """Embeddings for BERT, include word, position and token_type
@@ -107,7 +145,7 @@ class BertSelfAttention(nn.Cell):
 
         # Take the dot product between "query" and "key" to get the raw attention scores.
         attention_scores = ops.matmul(query_layer, key_layer.swapaxes(-1, -2))
-        attention_scores = attention_scores / ops.sqrt(Tensor(self.attention_head_size, mstype.float32))
+        attention_scores = attention_scores / ops.sqrt(ops.scalar_to_tensor(self.attention_head_size, mstype.float32))
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
         if attention_mask is not None:
             attention_scores = attention_scores + attention_mask
@@ -159,7 +197,7 @@ class BertIntermediate(nn.Cell):
     def __init__(self, config):
         super(BertIntermediate, self).__init__()
         self.dense = Dense(config.hidden_size, config.intermediate_size)
-        self.intermediate_act_fn = activation_map.get(config.hidden_act, GELU())
+        self.intermediate_act_fn = activation_map.get(config.hidden_act, GELU(False))
 
     def construct(self, hidden_states):
         hidden_states = self.dense(hidden_states)
@@ -241,7 +279,7 @@ class BertPredictionHeadTransform(nn.Cell):
     def __init__(self, config):
         super(BertPredictionHeadTransform, self).__init__()
         self.dense = Dense(config.hidden_size, config.hidden_size)
-        self.transform_act_fn = activation_map.get(config.hidden_act, GELU())
+        self.transform_act_fn = activation_map.get(config.hidden_act, GELU(False))
         self.layer_norm = nn.LayerNorm((config.hidden_size,), epsilon=config.layer_norm_eps)
 
     def construct(self, hidden_states):
@@ -301,6 +339,7 @@ class BertPretrainedCell(PretrainedCell):
     pretrained_model_archive = PRETRAINED_MODEL_ARCHIVE_MAP
     pytorch_pretrained_model_archive_list = PYTORCH_PRETRAINED_MODEL_ARCHIVE_LIST
     config_class = BertConfig
+    convert_torch_to_mindspore = torch_to_mindspore
 
 class BertModel(BertPretrainedCell):
     """"""
