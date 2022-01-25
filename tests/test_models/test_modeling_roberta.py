@@ -2,7 +2,7 @@ import unittest
 import mindspore
 import torch
 import numpy as np
-from bert4ms.models import RobertaModel, RobertaConfig
+from bert4ms.models import RobertaModel, RobertaConfig, RobertaForMaskedLM, RobertaForSequenceClassification
 from mindspore import Tensor
 from mindspore import context
 from transformers import RobertaModel as ptRobertaModel
@@ -56,3 +56,21 @@ class TestModelingRoberta(unittest.TestCase):
 
         assert np.allclose(outputs.asnumpy(), outputs_pt.detach().numpy(), atol=1e-3)
         assert np.allclose(pooled.asnumpy(), pooled_pt.detach().numpy(), atol=1e-3)
+    
+    def test_roberta_for_masked_lm(self):
+        context.set_context(mode=context.GRAPH_MODE)
+        model = RobertaForMaskedLM.load('roberta-base')
+        model.set_train()
+        input_ids = Tensor(np.random.randn(1, 512), mindspore.int32)
+
+        (prediction_scores,) = model(input_ids)
+        assert prediction_scores.shape == (1, 512, model.config.vocab_size)
+
+    def test_roberta_for_sequence_classification(self):
+        context.set_context(mode=context.GRAPH_MODE)
+        model = RobertaForSequenceClassification.load('roberta-large-mnli')
+        model.set_train()
+        input_ids = Tensor(np.random.randn(1, 512), mindspore.int32)
+
+        (prediction_scores,) = model(input_ids)
+        assert prediction_scores.shape == (1, model.config._num_labels)

@@ -71,7 +71,7 @@ class RobertaClassificationHead(nn.Cell):
         super().__init__()
         self.dense = Dense(config.hidden_size, config.hidden_size, activation='tanh')
         self.dropout = nn.Dropout(1-config.hidden_dropout_prob)
-        self.out_proj = Dense(config.hidden_size, config.num_labels)
+        self.out_proj = Dense(config.hidden_size, config._num_labels)
     
     def construct(self, features):
         x = features[:, 0, :]
@@ -109,7 +109,7 @@ class RobertaForMaskedLM(BertPretrainedCell):
             masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1))
             outputs = (masked_lm_loss,) + outputs
 
-        return outputs   
+        return outputs
     
 class RobertaForSequenceClassification(BertPretrainedCell):
     pretrained_model_archive = PRETRAINED_MODEL_ARCHIVE_MAP
