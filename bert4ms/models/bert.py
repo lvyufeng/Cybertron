@@ -1,5 +1,6 @@
 import os
 import logging
+from turtle import forward
 import mindspore.nn as nn
 import mindspore.ops as ops
 import mindspore.numpy as mnp
@@ -436,3 +437,173 @@ class BertForMaskedLM(BertPretrainedCell):
             outputs = (masked_lm_loss,) + outputs
 
         return outputs
+
+class BertForNextSentencePrediction(BertPretrainedCell):
+    def __init__(self, config, *args, **kwargs):
+        super().__init__(config, *args, **kwargs)
+        self.bert = BertModel(config)
+        self.cls = BertOnlyNSPHead(config)
+    
+    def construct(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None,
+                  next_sentence_label=None):
+        outputs = self.bert(input_ids,
+                            attention_mask=attention_mask,
+                            token_type_ids=token_type_ids,
+                            position_ids=position_ids, 
+                            head_mask=head_mask)
+
+        pooled_output = outputs[1]
+
+        seq_relationship_score = self.cls(pooled_output)
+
+        outputs = (seq_relationship_score,) + outputs[2:]  # add hidden states and attention if they are here
+        if next_sentence_label is not None:
+            loss_fct = nn.SoftmaxCrossEntropyWithLogits(True, 'mean')
+            next_sentence_loss = loss_fct(seq_relationship_score.view(-1, 2), next_sentence_label.view(-1))
+            outputs = (next_sentence_loss,) + outputs
+
+        return outputs  # (next_sentence_loss), seq_relationship_score, (hidden_states), (attentions)
+
+class BertForSequenceClassification(BertPretrainedCell):
+    def __init__(self, config, *args, **kwargs):
+        super().__init__(config, *args, **kwargs)
+        self.num_labels = config.num_labels
+        self.bert = BertModel(config)
+        self.dropout = nn.Dropout(1-config.hidden_dropout_prob)
+        self.classifier = Dense(config.hidden_size, config.num_labels)
+
+    def construct(self, input_ids, attention_mask=None, token_type_ids=None,
+                  position_ids=None, head_mask=None, labels=None):
+        outputs = self.bert(input_ids,
+                            attention_mask=attention_mask,
+                            token_type_ids=token_type_ids,
+                            position_ids=position_ids, 
+                            head_mask=head_mask)
+
+        pooled_output = outputs[1]
+
+        pooled_output = self.dropout(pooled_output)
+        logits = self.classifier(pooled_output)
+
+        outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
+
+        if labels is not None:
+            if self.num_labels == 1:
+                #  We are doing regression
+                loss_fct = nn.MSELoss()
+                loss = loss_fct(logits.view(-1), labels.view(-1))
+            else:
+                loss_fct = nn.SoftmaxCrossEntropyWithLogits(True, 'mean')
+                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            outputs = (loss,) + outputs
+
+        return outputs  # (loss), logits, (hidden_states), (attentions)
+
+class BertForMultipleChoice(BertPretrainedCell):
+    def __init__(self, config, *args, **kwargs):
+        super().__init__(config, *args, **kwargs)
+        self.bert = BertModel(config)
+        self.dropout = nn.Dropout(1-config.hidden_dropout_prob)
+        self.classifier = Dense(config.hidden_size, 1)
+
+
+    def construct(self, input_ids, attention_mask=None, token_type_ids=None,
+                  position_ids=None, head_mask=None, labels=None):
+        num_choices = input_ids.shape[1]
+
+        input_ids = input_ids.view(-1, input_ids.size(-1))
+        attention_mask = attention_mask.view(-1, attention_mask.size(-1)) if attention_mask is not None else None
+        token_type_ids = token_type_ids.view(-1, token_type_ids.size(-1)) if token_type_ids is not None else None
+        position_ids = position_ids.view(-1, position_ids.size(-1)) if position_ids is not None else None
+
+        outputs = self.bert(input_ids,
+                            attention_mask=attention_mask,
+                            token_type_ids=token_type_ids,
+                            position_ids=position_ids,
+                            head_mask=head_mask)
+
+        pooled_output = outputs[1]
+
+        pooled_output = self.dropout(pooled_output)
+        logits = self.classifier(pooled_output)
+        reshaped_logits = logits.view(-1, num_choices)
+
+        outputs = (reshaped_logits,) + outputs[2:]  # add hidden states and attention if they are here
+
+        if labels is not None:
+            loss_fct = nn.SoftmaxCrossEntropyWithLogits(True, 'mean')
+            loss = loss_fct(reshaped_logits, labels)
+            outputs = (loss,) + outputs
+
+        return outputs  # (loss), reshaped_logits, (hidden_states), (attentions)
+
+class BertForTokenClassification(BertPretrainedCell):
+    def __init__(self, config, *args, **kwargs):
+        super().__init__(config, *args, **kwargs)
+        self.num_labels = config.num_labels
+        self.bert = BertModel(config)
+        self.dropout = nn.Dropout(1-config.hidden_dropout_prob)
+        self.classifier = Dense(config.hidden_size, config.num_labels)
+    
+    def construct(self, input_ids, attention_mask=None, token_type_ids=None,
+                  position_ids=None, head_mask=None, labels=None):
+
+        outputs = self.bert(input_ids,
+                            attention_mask=attention_mask,
+                            token_type_ids=token_type_ids,
+                            position_ids=position_ids, 
+                            head_mask=head_mask)
+
+        sequence_output = outputs[0]
+
+        sequence_output = self.dropout(sequence_output)
+        logits = self.classifier(sequence_output)
+
+        outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
+        if labels is not None:
+            loss_fct = nn.SoftmaxCrossEntropyWithLogits(True, 'mean')
+            # Only keep active parts of the loss
+            if attention_mask is not None:
+                active_loss = attention_mask.view(-1) == 1
+                active_logits = logits.view(-1, self.num_labels)[active_loss]
+                active_labels = labels.view(-1)[active_loss]
+                loss = loss_fct(active_logits, active_labels)
+            else:
+                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            outputs = (loss,) + outputs
+
+        return outputs  # (loss), scores, (hidden_states), (attentions)
+
+class BertForQuestionAnswering(BertPretrainedCell):
+    def __init__(self, config, *args, **kwargs):
+        super().__init__(config, *args, **kwargs)
+        self.num_labels = config.num_labels
+        self.bert = BertModel(config)
+        self.qa_outputs = Dense(config.hidden_size, config.num_labels)
+    
+    def forward(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None,
+                start_positions=None, end_positions=None):
+
+        outputs = self.bert(input_ids,
+                            attention_mask=attention_mask,
+                            token_type_ids=token_type_ids,
+                            position_ids=position_ids, 
+                            head_mask=head_mask)
+
+        sequence_output = outputs[0]
+
+        logits = self.qa_outputs(sequence_output)
+        start_logits, end_logits = logits.split(1, dim=-1)
+        start_logits = start_logits.squeeze(-1)
+        end_logits = end_logits.squeeze(-1)
+
+        outputs = (start_logits, end_logits,) + outputs[2:]
+        if start_positions is not None and end_positions is not None:
+
+            loss_fct = nn.SoftmaxCrossEntropyWithLogits(True, 'mean')
+            start_loss = loss_fct(start_logits, start_positions)
+            end_loss = loss_fct(end_logits, end_positions)
+            total_loss = (start_loss + end_loss) / 2
+            outputs = (total_loss,) + outputs
+
+        return outputs  # (loss), start_logits, end_logits, (hidden_states), (attentions)
