@@ -69,8 +69,9 @@ class MLP(nn.Cell):
         super().__init__()
         nx = config.n_embd
         self.c_fc = Conv1D(n_state, nx)
-        self.c_proj = Conv1D(nx, n_state)
-        self.act = activation_map.get('gelu_approximate', GELU())
+        self.c_proj = Conv1D(nx, n_state) 
+        afn = config.afn if config.afn != 'gelu' else 'gelu_approximate'
+        self.act = activation_map.get(afn, GELU())
 
     def construct(self, x):
         h = self.act(self.c_fc(x))
