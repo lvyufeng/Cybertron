@@ -1,4 +1,3 @@
-import json
 from ..common.config import PretrainedConfig
 
 CONFIG_ARCHIVE_MAP = {

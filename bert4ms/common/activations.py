@@ -29,8 +29,29 @@ class GELU(nn.Cell):
         return x * ops.cast(self.const0, x.dtype) * (ops.cast(self.const1, x.dtype) + \
             self.erf(x / self.sqrt(ops.cast(self.const2, x.dtype))))
 
+class SiLU(nn.Cell):
+    """Applies the Sigmoid Linear Unit (SiLU) function, element-wise.
+    The SiLU function is also known as the swish function.
+    .. math::
+        \text{silu}(x) = x * \sigma(x), \text{where } \sigma(x) \text{ is the logistic sigmoid.}
+    Shape:
+        - Input: :math:`(*)`, where :math:`*` means any number of dimensions.
+        - Output: :math:`(*)`, same shape as the input.
+    Examples::
+        >>> m = nn.SiLU()
+        >>> inputs = mindspore.Tensor([1, 2, 3], mindspore.float32)
+        >>> outputs = m(inputs)
+    """
+    def __init__(self):
+        super().__init__()
+        self.sigmoid = ops.Sigmoid()
+
+    def construct(self, inputs):
+        return inputs * self.sigmoid(inputs)
+
 activation_map = {
     'relu': nn.ReLU(),
     'gelu': GELU(False),
-    'gelu_approximate': GELU()
+    'gelu_approximate': GELU(),
+    'swish':SiLU()
 }
