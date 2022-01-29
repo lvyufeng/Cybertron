@@ -10,6 +10,7 @@ class GPTConfig(PretrainedConfig):
         self,
         vocab_size=40478,
         n_positions=512,
+        n_ctx=512,
         n_embd=768,
         n_layer=12,
         n_head=12,
@@ -28,6 +29,7 @@ class GPTConfig(PretrainedConfig):
         **kwargs
     ):
         self.vocab_size = vocab_size
+        self.n_ctx = n_ctx
         self.n_positions = n_positions
         self.n_embd = n_embd
         self.n_layer = n_layer

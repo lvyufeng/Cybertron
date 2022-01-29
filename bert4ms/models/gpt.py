@@ -1,3 +1,5 @@
+import os
+import logging
 import mindspore
 import mindspore.nn as nn
 import mindspore.numpy as mnp
@@ -10,10 +12,44 @@ from ..common.layers import Dense
 from ..configs.gpt import GPTConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
-    "openai-gpt": ""
+    "openai-gpt": "https://sharelist-lv.herokuapp.com/models/gpt/openai-gpt.ckpt"
 }
 
 PYTORCH_PRETRAINED_MODEL_ARCHIVE_LIST = ["openai-gpt"]
+
+def torch_to_mindspore(pth_file):
+    try:
+        import torch
+    except:
+        raise ImportError(f"'import torch' failed, please install torch by "
+                          f"`pip install torch` or instructions from 'https://pytorch.org'")
+
+    from mindspore import Tensor
+    from mindspore.train.serialization import save_checkpoint
+
+    logging.info('Starting checkpoint conversion.')
+    ms_ckpt = []
+    state_dict = torch.load(pth_file, map_location=torch.device('cpu'))
+
+    for k, v in state_dict.items():
+        if 'ln' in k:
+            if '.weight' in k:
+                k = k.replace('.weight', '.gamma')
+            if '.bias' in k:
+                k = k.replace('.bias', '.beta')
+        if 'embed' in k:
+            k = k.replace('weight', 'embedding_table')
+        ms_ckpt.append({'name': k, 'data': Tensor(v.numpy())})
+
+    ms_ckpt_path = pth_file.replace('.bin','.ckpt')
+    if not os.path.exists(ms_ckpt_path):
+        try:
+            save_checkpoint(ms_ckpt, ms_ckpt_path)
+        except:
+            raise RuntimeError(f'Save checkpoint to {ms_ckpt_path} failed, please checkout the path.')
+
+    return ms_ckpt_path
+
 
 class Conv1D(nn.Cell):
     def __init__(self, nf, nx):
@@ -24,14 +60,14 @@ class Conv1D(nn.Cell):
     
     def construct(self, x):
         size_out = x.shape[:-1] + (self.nf,)
-        x = x.view(-1, x.shape[-1]) @ self.weight + self.bias
+        x = ops.matmul(x.view(-1, x.shape[-1]), self.weight) + self.bias
         x = x.view(size_out)
         return x
 
 class MLP(nn.Cell):
     def __init__(self, n_state, config):
         super().__init__()
-        nx = config.n_embed
+        nx = config.n_embd
         self.c_fc = Conv1D(n_state, nx)
         self.c_proj = Conv1D(nx, n_state)
         self.act = activation_map.get('gelu_approximate', GELU())
@@ -48,10 +84,11 @@ class Attention(nn.Cell):
 
         n_state = nx
         assert n_state % config.n_head == 0
-        self.bias = Parameter(mnp.tril(mnp.ones(n_ctx, n_ctx)).view(1, 1, n_ctx, n_ctx), 'bias')
+        self.bias = Parameter(mnp.tril(mnp.ones((n_ctx, n_ctx))).view(1, 1, n_ctx, n_ctx), 'bias')
         self.n_head = config.n_head
-        self.split_size = n_state
         self.scale = scale
+
+        self.output_attentions = config.output_attentions
 
         self.c_attn = Conv1D(n_state * 3, nx)
         self.c_proj = Conv1D(n_state, nx)
@@ -59,12 +96,11 @@ class Attention(nn.Cell):
         self.resid_dropout = nn.Dropout(1-config.resid_pdrop)
 
     def _attn(self, q, k, v, attention_mask=None, head_mask=None):
-        w = mnp.matmul(q, k)
+        w = ops.matmul(q, k)
         if self.scale:
-            w = w / mnp.sqrt(v.shape[-1])
-        nd, ns = w.shape[-2], w.shape[-1]
-        b = self.bias[:, :, ns-nd:ns, :ns]
-        w = w * b - 1e4 * (1 - b)
+            w = w / ops.sqrt(ops.scalar_to_tensor(v.shape[-1]))
+        b = self.bias[:, :, : w.shape[-2], : w.shape[-1]]
+        w = w * b + -1e9 * (1 - b)
 
         if attention_mask is not None:
             w = w + attention_mask
@@ -75,7 +111,7 @@ class Attention(nn.Cell):
         if head_mask is not None:
             w = w * head_mask
         
-        outputs = (mnp.matmul(w, v),)
+        outputs = (ops.matmul(w, v),)
         if self.output_attentions:
             outputs += (w,)
         return outputs
@@ -93,18 +129,12 @@ class Attention(nn.Cell):
         new_x_shape = x.shape[:-2] + (x.shape[-2] * x.shape[-1],)
         return x.view(new_x_shape)
 
-    def construct(self, x, layer_past=None, attention_mask=None, head_mask=None):
+    def construct(self, x, attention_mask=None, head_mask=None):
         x = self.c_attn(x)
-        query, key, value = mnp.split(x, self.split_size, axis=2)
+        query, key, value = mnp.split(x, 3, axis=2)
         query = self.split_heads(query)
         key = self.split_heads(key, k=True)
         value = self.split_heads(value)
-
-        if layer_past is not None:
-            past_key, past_value = layer_past[0].swapaxes(-2, -1), layer_past[1]
-            key = mnp.concatenate((past_key, key), axis=-1)
-            value = mnp.concatenate((past_value, value), axis=-2)
-        present = mnp.stack((key.swapaxes(-2, -1), value))
 
         attn_outputs = self._attn(query, key, value, attention_mask, head_mask)
         a = attn_outputs[0]
@@ -112,44 +142,45 @@ class Attention(nn.Cell):
         a = self.merge_heads(a)
         a = self.c_proj(a)
         a = self.resid_dropout(a)
-        outputs = (a, present) + attn_outputs[1:]
+        outputs = (a,) + attn_outputs[1:]
         return outputs
 
 class Block(nn.Cell):
     def __init__(self, n_ctx, config, scale=False):
         super().__init__()
-        nx = config.n_embed
+        nx = config.n_embd
         self.ln_1 = nn.LayerNorm((nx,), epsilon=config.layer_norm_epsilon)
         self.attn = Attention(nx, n_ctx, config, scale)
-        self.ln_2 = nn.LayerNorm((nx,), eps=config.layer_norm_epsilon)
+        self.ln_2 = nn.LayerNorm((nx,), epsilon=config.layer_norm_epsilon)
         self.mlp = MLP(4 * nx, config)
 
-    def construct(self, x, layer_past=None, attention_mask=None, head_mask=None):
+    def construct(self, x, attention_mask=None, head_mask=None):
         output_attn = self.attn(
-            self.ln_1(x),
-            layer_past=layer_past,
+            x,
             attention_mask=attention_mask,
             head_mask=head_mask
         )
 
         a = output_attn[0]
-        x = x + a
-        m = self.mlp(self.ln_2(x))
-        x = x + m
-        outputs = (x,) + output_attn[1:]
+        n = self.ln_1(x + a)
+        m = self.mlp(n)
+        h = self.ln_2(n + m)
+
+        outputs = (h,) + output_attn[1:]
         return outputs
 
 class GPTPretrainedCell(PretrainedCell):
     pretrained_model_archive = PRETRAINED_MODEL_ARCHIVE_MAP
     pytorch_pretrained_model_archive_list = PYTORCH_PRETRAINED_MODEL_ARCHIVE_LIST
     config_class = GPTConfig
-    convert_torch_to_mindspore = lambda torch_model_file: None
+    convert_torch_to_mindspore = torch_to_mindspore
 
 class GPTModel(GPTPretrainedCell):
     def __init__(self, config, *args, **kwargs):
         super().__init__(config, *args, **kwargs)
         self.output_attentions = config.output_attentions
         self.output_hidden_states = config.output_hidden_states
+        self.n_layer = config.n_layer
 
         self.tokens_embed = nn.Embedding(config.vocab_size, config.n_embd)
         self.positions_embed = nn.Embedding(config.n_positions, config.n_embd)
@@ -168,11 +199,11 @@ class GPTModel(GPTPretrainedCell):
         if head_mask is not None:
             if head_mask.ndim == 1:
                 head_mask = head_mask.expand_dims(0).expand_dims(0).expand_dims(-1).expand_dims(-1)
-                head_mask = mnp.broadcast_to(head_mask, (self.config.n_layer, -1, -1, -1, -1))
+                head_mask = mnp.broadcast_to(head_mask, (self.n_layer, -1, -1, -1, -1))
             elif head_mask.ndim == 2:
                 head_mask = head_mask.expand_dims(1).expand_dims(-1).expand_dims(-1)
         else:
-            head_mask = (None,) * self.config.n_layer
+            head_mask = (None,) * self.n_layer
         
         input_shape = input_ids.shape
         input_ids = input_ids.view(-1, input_ids.shape[-1])
