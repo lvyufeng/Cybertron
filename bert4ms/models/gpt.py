@@ -50,7 +50,6 @@ def torch_to_mindspore(pth_file):
 
     return ms_ckpt_path
 
-
 class Conv1D(nn.Cell):
     def __init__(self, nf, nx):
         super().__init__()

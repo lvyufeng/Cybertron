@@ -61,7 +61,6 @@ def torch_to_mindspore(pth_file):
     state_dict = torch.load(pth_file, map_location=torch.device('cpu'))
 
     for k, v in state_dict.items():
-        print(k)
         if 'LayerNorm' in k:
             k = k.replace('LayerNorm', 'layer_norm')
         if 'layer_norm' in k:

@@ -35,3 +35,51 @@ class Erf(nn.Cell):
 
         result = ops.Select()(cond, ans, -ans)
         return result
+
+def ibnd_jbnd_to_ijbn(a, b):
+    # a -> (i, 1, b, n, d)
+    a = a.expand_dims(1)
+    # b -> (1, j, b, n, d)
+    b = b.expand_dims(0)
+    out = a * b
+    return out.sum(-1)
+
+def ibnd_snd_to_ibns(a, b):
+    # a -> (i, b, 1, n, d)
+    a = a.expand_dims(2)
+    # b -> (1, 1, s, n, d)
+    b = b.expand_dims(0).expand_dims(0)
+    out = (a * b).sum(-1)
+    return out.swapaxes(2, 3)
+
+def ijbs_ibns_to_ijbn(a, b):
+    # a -> (i, j, b, 1, s)
+    a = a.expand_dims(3)
+    # b -> (i, 1, b, n, s)
+    b = b.expand_dims(1)
+    out = a * b
+    return out.sum(-1)
+
+def ijbn_jbnd_to_ibnd(a, b):
+    # a -> (i, j, b, n, 1)
+    a = a.expand_dims(-1)
+    # b -> (1, j, b, n, d)
+    b = b.expand_dims(0)
+    out = a * b
+    return out.sum(1)
+
+def mbnd_mlb_to_lbnd(a, b):
+    # a -> (m, 1, b, n, d)
+    a = a.expand_dims(1)
+    # b -> (m, l, b, 1, 1)
+    b = b.expand_dims(-1).expand_dims(-1)
+    out = a * b
+    return out.sum(0)
+
+def lbnd_mlb_to_mbnd(a, b):
+    # a -> (1, l, b, n, d)
+    a = a.expand_dims(0)
+    # b -> (m, l, b, 1, 1)
+    b = b.expand_dims(-1).expand_dims(-1)
+    out = a * b
+    return out.sum(1)
