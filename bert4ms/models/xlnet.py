@@ -7,7 +7,7 @@ import mindspore.ops as ops
 from mindspore import Parameter
 from mindspore.common.initializer import initializer, Normal
 from ..common.ops import *
-from ..common.layers import Dense
+from ..common.layers import Dense, CrossEntropyLoss, SequenceSummary, PoolerAnswerClass, PoolerEndLogits, PoolerStartLogits
 from ..common.activations import activation_map, GELU
 from ..common.cell import PretrainedCell
 from ..configs.xlnet import XLNetConfig
@@ -196,7 +196,7 @@ class XLNetRelativeAttention(nn.Cell):
 
         else:
             ###### Multi-head attention with relative positional encoding
-            if mems is not None and mems.dim() > 1:
+            if mems is not None and mems.ndim > 1:
                 cat = mnp.concatenate([mems, h])
             else:
                 cat = h
@@ -532,3 +532,238 @@ class XLNetModel(XLNetPretrainedCell):
             outputs = outputs + (attentions,)
 
         return outputs  # outputs, new_mems, (hidden_states), (attentions)
+
+class XLNetLMHeadModel(XLNetPretrainedCell):
+    def __init__(self, config):
+        super(XLNetLMHeadModel, self).__init__(config)
+        self.attn_type = config.attn_type
+        self.same_length = config.same_length
+
+        self.transformer = XLNetModel(config)
+        self.lm_loss = Dense(config.d_model, config.n_token, has_bias=True)
+
+        self.lm_loss.weight = self.transformer.word_embedding.embedding_table
+
+    def construct(self, input_ids, attention_mask=None, mems=None, perm_mask=None, target_mapping=None,
+                  token_type_ids=None, input_mask=None, head_mask=None, labels=None):
+        transformer_outputs = self.transformer(input_ids,
+                                               attention_mask=attention_mask,
+                                               mems=mems,
+                                               perm_mask=perm_mask,
+                                               target_mapping=target_mapping,
+                                               token_type_ids=token_type_ids,
+                                               input_mask=input_mask, 
+                                               head_mask=head_mask)
+
+        logits = self.lm_loss(transformer_outputs[0])
+
+        outputs = (logits,) + transformer_outputs[1:]  # Keep mems, hidden states, attentions if there are in it
+
+        if labels is not None:
+            # Flatten the tokens
+            loss_fct = CrossEntropyLoss(ignore_index=-1)
+            loss = loss_fct(logits.view(-1, logits.size(-1)),
+                            labels.view(-1))
+            outputs = (loss,) + outputs
+
+        return outputs  # return (loss), logits, mems, (hidden states), (attentions)
+
+class XLNetForSequenceClassification(XLNetPretrainedCell):
+    def __init__(self, config):
+        super(XLNetForSequenceClassification, self).__init__(config)
+        self.num_labels = config.num_labels
+
+        self.transformer = XLNetModel(config)
+        self.sequence_summary = SequenceSummary(config)
+        self.logits_proj = Dense(config.d_model, config.num_labels)
+
+    def construct(self, input_ids, attention_mask=None, mems=None, perm_mask=None, target_mapping=None,
+                  token_type_ids=None, input_mask=None, head_mask=None, labels=None):
+        transformer_outputs = self.transformer(input_ids,
+                                               attention_mask=attention_mask,
+                                               mems=mems,
+                                               perm_mask=perm_mask,
+                                               target_mapping=target_mapping,
+                                               token_type_ids=token_type_ids,
+                                               input_mask=input_mask, 
+                                               head_mask=head_mask)
+        output = transformer_outputs[0]
+
+        output = self.sequence_summary(output)
+        logits = self.logits_proj(output)
+
+        outputs = (logits,) + transformer_outputs[1:]  # Keep mems, hidden states, attentions if there are in it
+
+        if labels is not None:
+            if self.num_labels == 1:
+                #  We are doing regression
+                loss_fct = nn.MSELoss()
+                loss = loss_fct(logits.view(-1), labels.view(-1))
+            else:
+                loss_fct = CrossEntropyLoss()
+                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            outputs = (loss,) + outputs
+
+        return outputs  # return (loss), logits, mems, (hidden states), (attentions)
+
+class XLNetForMultipleChoice(XLNetPretrainedCell):
+    def __init__(self, config):
+        super(XLNetForMultipleChoice, self).__init__(config)
+
+        self.transformer = XLNetModel(config)
+        self.sequence_summary = SequenceSummary(config)
+        self.logits_proj = Dense(config.d_model, 1)
+
+    def construct(self, input_ids, token_type_ids=None, input_mask=None, attention_mask=None,
+                  mems=None, perm_mask=None, target_mapping=None, labels=None, head_mask=None):
+        num_choices = input_ids.shape[1]
+
+        flat_input_ids = input_ids.view(-1, input_ids.shape[-1])
+        flat_token_type_ids = token_type_ids.view(-1, token_type_ids.shape[-1]) if token_type_ids is not None else None
+        flat_attention_mask = attention_mask.view(-1, attention_mask.shape[-1]) if attention_mask is not None else None
+        flat_input_mask = input_mask.view(-1, input_mask.shape[-1]) if input_mask is not None else None
+
+        transformer_outputs = self.transformer(flat_input_ids, token_type_ids=flat_token_type_ids,
+                                               input_mask=flat_input_mask, attention_mask=flat_attention_mask,
+                                               mems=mems, perm_mask=perm_mask, target_mapping=target_mapping,
+                                               head_mask=head_mask)
+
+
+        output = transformer_outputs[0]
+
+        output = self.sequence_summary(output)
+        logits = self.logits_proj(output)
+        reshaped_logits = logits.view(-1, num_choices)
+        outputs = (reshaped_logits,) + transformer_outputs[1:]  # Keep mems, hidden states, attentions if there are in it
+
+        if labels is not None:
+            loss_fct = CrossEntropyLoss()
+            loss = loss_fct(reshaped_logits, labels.view(-1))
+            outputs = (loss,) + outputs
+
+        return outputs  # return (loss), logits, mems, (hidden states), (attentions)
+
+class XLNetForQuestionAnsweringSimple(XLNetPretrainedCell):
+    def __init__(self, config):
+        super(XLNetForQuestionAnsweringSimple, self).__init__(config)
+        self.num_labels = config.num_labels
+
+        self.transformer = XLNetModel(config)
+        self.qa_outputs = Dense(config.hidden_size, config.num_labels)
+
+    def construct(self, input_ids, attention_mask=None, mems=None, perm_mask=None, target_mapping=None,
+                  token_type_ids=None, input_mask=None, head_mask=None,
+                  start_positions=None, end_positions=None):
+
+        outputs = self.transformer(input_ids,
+                                   attention_mask=attention_mask,
+                                   mems=mems,
+                                   perm_mask=perm_mask,
+                                   target_mapping=target_mapping,
+                                   token_type_ids=token_type_ids,
+                                   input_mask=input_mask, 
+                                   head_mask=head_mask)
+
+        sequence_output = outputs[0]
+
+        logits = self.qa_outputs(sequence_output)
+        start_logits, end_logits = mnp.split(logits, 1, axis=-1)
+        start_logits = start_logits.squeeze(-1)
+        end_logits = end_logits.squeeze(-1)
+
+        outputs = (start_logits, end_logits,) + outputs[2:]
+        if start_positions is not None and end_positions is not None:
+            # sometimes the start/end positions are outside our model inputs, we ignore these terms
+            ignored_index = start_logits.shape[1]
+            start_positions.clip(0, ignored_index)
+            end_positions.clip(0, ignored_index)
+
+            loss_fct = CrossEntropyLoss(ignore_index=ignored_index)
+            start_loss = loss_fct(start_logits, start_positions)
+            end_loss = loss_fct(end_logits, end_positions)
+            total_loss = (start_loss + end_loss) / 2
+            outputs = (total_loss,) + outputs
+
+        return outputs  # (loss), start_logits, end_logits, (hidden_states), (attentions)
+
+class XLNetForQuestionAnswering(XLNetPretrainedCell):
+    def __init__(self, config):
+        super(XLNetForQuestionAnswering, self).__init__(config)
+        self.start_n_top = config.start_n_top
+        self.end_n_top = config.end_n_top
+
+        self.transformer = XLNetModel(config)
+        self.start_logits = PoolerStartLogits(config)
+        self.end_logits = PoolerEndLogits(config)
+        self.answer_class = PoolerAnswerClass(config)
+
+        self.init_weights()
+
+    def forward(self, input_ids, attention_mask=None, mems=None, perm_mask=None, target_mapping=None,
+                token_type_ids=None, input_mask=None, head_mask=None,
+                start_positions=None, end_positions=None, is_impossible=None, cls_index=None, p_mask=None,):
+        transformer_outputs = self.transformer(input_ids,
+                                               attention_mask=attention_mask,
+                                               mems=mems,
+                                               perm_mask=perm_mask,
+                                               target_mapping=target_mapping,
+                                               token_type_ids=token_type_ids,
+                                               input_mask=input_mask, 
+                                               head_mask=head_mask)
+        hidden_states = transformer_outputs[0]
+        start_logits = self.start_logits(hidden_states, p_mask=p_mask)
+
+        outputs = transformer_outputs[1:]  # Keep mems, hidden states, attentions if there are in it
+
+        if start_positions is not None and end_positions is not None:
+            # If we are on multi-GPU, let's remove the dimension added by batch splitting
+            for x in (start_positions, end_positions, cls_index, is_impossible):
+                if x is not None and x.dim() > 1:
+                    x.squeeze_(-1)
+
+            # during training, compute the end logits based on the ground truth of the start position
+            end_logits = self.end_logits(hidden_states, start_positions=start_positions, p_mask=p_mask)
+
+            loss_fct = CrossEntropyLoss()
+            start_loss = loss_fct(start_logits, start_positions)
+            end_loss = loss_fct(end_logits, end_positions)
+            total_loss = (start_loss + end_loss) / 2
+
+            if cls_index is not None and is_impossible is not None:
+                # Predict answerability from the representation of CLS and START
+                cls_logits = self.answer_class(hidden_states, start_positions=start_positions, cls_index=cls_index)
+                loss_fct_cls = nn.BCEWithLogitsLoss()
+                cls_loss = loss_fct_cls(cls_logits, is_impossible)
+
+                # note(zhiliny): by default multiply the loss by 0.5 so that the scale is comparable to start_loss and end_loss
+                total_loss += cls_loss * 0.5
+
+            outputs = (total_loss,) + outputs
+
+        else:
+            # during inference, compute the end logits based on beam search
+            bsz, slen, hsz = hidden_states.shape
+            start_log_probs = ops.Softmax()(start_logits) # shape (bsz, slen)
+
+            start_top_log_probs, start_top_index = ops.TopK()(start_log_probs, self.start_n_top) # shape (bsz, start_n_top)
+            start_top_index_exp = mnp.broadcast_to(start_top_index.expand_dims(-1), (-1, -1, hsz)) # shape (bsz, start_n_top, hsz)
+            start_states = ops.gather_d(hidden_states, -2, start_top_index_exp) # shape (bsz, start_n_top, hsz)
+            start_states = mnp.broadcast_to(start_states.expand_dims(1), (-1, slen, -1, -1)) # shape (bsz, slen, start_n_top, hsz)
+
+            hidden_states_expanded = hidden_states.expand_dims(2).expand_as(start_states) # shape (bsz, slen, start_n_top, hsz)
+            p_mask = p_mask.expand_dims(-1) if p_mask is not None else None
+            end_logits = self.end_logits(hidden_states_expanded, start_states=start_states, p_mask=p_mask)
+            end_log_probs = ops.Softmax(1)(end_logits) # shape (bsz, slen, start_n_top)
+
+            end_top_log_probs, end_top_index = ops.TopK()(end_log_probs, self.end_n_top) # shape (bsz, end_n_top, start_n_top)
+            end_top_log_probs = end_top_log_probs.view(-1, self.start_n_top * self.end_n_top)
+            end_top_index = end_top_index.view(-1, self.start_n_top * self.end_n_top)
+
+            start_states = blh_bl_to_bh(hidden_states, start_log_probs)  # get the representation of START as weighted sum of hidden states
+            cls_logits = self.answer_class(hidden_states, start_states=start_states, cls_index=cls_index)  # Shape (batch size,): one single `cls_logits` for each sample
+
+            outputs = (start_top_log_probs, start_top_index, end_top_log_probs, end_top_index, cls_logits) + outputs
+
+        # return start_top_log_probs, start_top_index, end_top_log_probs, end_top_index, cls_logits
+        # or (if labels are provided) (total_loss,)
+        return outputs

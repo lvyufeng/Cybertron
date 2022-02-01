@@ -8,7 +8,7 @@ from mindspore import Parameter
 from mindspore.common.initializer import initializer, Normal
 from ..common.activations import activation_map, GELU
 from ..common.cell import PretrainedCell
-from ..common.layers import Dense, SequenceSummary
+from ..common.layers import Dense, SequenceSummary, CrossEntropyLoss
 from ..configs.gpt import GPTConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
@@ -267,7 +267,7 @@ class GPTLMHeadModel(GPTPretrainedCell):
             shift_logits = lm_logits[..., :-1, :]
             shift_labels = labels[..., 1:]
             # Flatten the tokens
-            loss_fct = nn.SoftmaxCrossEntropyWithLogits(True, 'mean')
+            loss_fct = CrossEntropyLoss(-1)
             loss = loss_fct(shift_logits.view(-1, shift_logits.shape[-1]),
                             shift_labels.view(-1))
             outputs = (loss,) + outputs
@@ -297,14 +297,14 @@ class GPTDoubleHeadsModel(GPTPretrainedCell):
 
         outputs = (lm_logits, mc_logits) + transformer_outputs[1:]
         if mc_labels is not None:
-            loss_fct = nn.SoftmaxCrossEntropyWithLogits(True, 'mean')
+            loss_fct = CrossEntropyLoss()
             loss = loss_fct(mc_logits.view(-1, mc_logits.shape[-1]),
                             mc_labels.view(-1))
             outputs = (loss,) + outputs
         if lm_labels is not None:
             shift_logits = lm_logits[..., :-1, :]
             shift_labels = lm_labels[..., 1:]
-            loss_fct = nn.SoftmaxCrossEntropyWithLogits(True, 'mean')
+            loss_fct = CrossEntropyLoss(ignore_index=-1)
             loss = loss_fct(shift_logits.view(-1, shift_logits.shape[-1]),
                             shift_labels.view(-1))
             outputs = (loss,) + outputs

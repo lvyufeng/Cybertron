@@ -8,7 +8,7 @@ from mindspore import Parameter
 from mindspore.common.initializer import initializer
 from ..common.activations import activation_map, GELU
 from ..common.cell import PretrainedCell
-from ..common.layers import Dense, Embedding
+from ..common.layers import Dense, Embedding, CrossEntropyLoss
 from ..configs.bert import BertConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
@@ -387,7 +387,7 @@ class BertForPretraining(BertPretrainedCell):
 
         self.cls.predictions.decoder.weight = self.bert.embeddings.word_embeddings.embedding_table
     
-        self.loss_fct = nn.SoftmaxCrossEntropyWithLogits(True, 'mean')
+        self.loss_fct = CrossEntropyLoss(ignore_index=-1)
 
     def construct(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None,
                   masked_lm_labels=None, next_sentence_label=None):
@@ -432,7 +432,7 @@ class BertForMaskedLM(BertPretrainedCell):
 
         outputs = (prediction_scores,) + outputs[:2]
         if masked_lm_labels is not None:
-            loss_fct = nn.SoftmaxCrossEntropyWithLogits(True, 'mean')
+            loss_fct = CrossEntropyLoss(ignore_index=-1)
             masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1))
             outputs = (masked_lm_loss,) + outputs
 
@@ -458,7 +458,7 @@ class BertForNextSentencePrediction(BertPretrainedCell):
 
         outputs = (seq_relationship_score,) + outputs[2:]  # add hidden states and attention if they are here
         if next_sentence_label is not None:
-            loss_fct = nn.SoftmaxCrossEntropyWithLogits(True, 'mean')
+            loss_fct = CrossEntropyLoss(ignore_index=-1)
             next_sentence_loss = loss_fct(seq_relationship_score.view(-1, 2), next_sentence_label.view(-1))
             outputs = (next_sentence_loss,) + outputs
 
@@ -493,7 +493,7 @@ class BertForSequenceClassification(BertPretrainedCell):
                 loss_fct = nn.MSELoss()
                 loss = loss_fct(logits.view(-1), labels.view(-1))
             else:
-                loss_fct = nn.SoftmaxCrossEntropyWithLogits(True, 'mean')
+                loss_fct = CrossEntropyLoss()
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             outputs = (loss,) + outputs
 
@@ -531,7 +531,7 @@ class BertForMultipleChoice(BertPretrainedCell):
         outputs = (reshaped_logits,) + outputs[2:]  # add hidden states and attention if they are here
 
         if labels is not None:
-            loss_fct = nn.SoftmaxCrossEntropyWithLogits(True, 'mean')
+            loss_fct = CrossEntropyLoss()
             loss = loss_fct(reshaped_logits, labels)
             outputs = (loss,) + outputs
 
@@ -561,7 +561,7 @@ class BertForTokenClassification(BertPretrainedCell):
 
         outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
         if labels is not None:
-            loss_fct = nn.SoftmaxCrossEntropyWithLogits(True, 'mean')
+            loss_fct = CrossEntropyLoss()
             # Only keep active parts of the loss
             if attention_mask is not None:
                 active_loss = attention_mask.view(-1) == 1
@@ -581,8 +581,8 @@ class BertForQuestionAnswering(BertPretrainedCell):
         self.bert = BertModel(config)
         self.qa_outputs = Dense(config.hidden_size, config.num_labels)
     
-    def forward(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None,
-                start_positions=None, end_positions=None):
+    def construct(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None,
+                  start_positions=None, end_positions=None):
 
         outputs = self.bert(input_ids,
                             attention_mask=attention_mask,
@@ -599,8 +599,12 @@ class BertForQuestionAnswering(BertPretrainedCell):
 
         outputs = (start_logits, end_logits,) + outputs[2:]
         if start_positions is not None and end_positions is not None:
+            # sometimes the start/end positions are outside our model inputs, we ignore these terms
+            ignored_index = start_logits.shape[1]
+            start_positions.clip(0, ignored_index)
+            end_positions.clip(0, ignored_index)
 
-            loss_fct = nn.SoftmaxCrossEntropyWithLogits(True, 'mean')
+            loss_fct = CrossEntropyLoss(ignore_index=ignored_index)
             start_loss = loss_fct(start_logits, start_positions)
             end_loss = loss_fct(end_logits, end_positions)
             total_loss = (start_loss + end_loss) / 2
