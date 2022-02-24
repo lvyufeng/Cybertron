@@ -3,7 +3,7 @@ import os
 import mindspore.nn as nn
 from mindspore.train.serialization import load_checkpoint, load_param_into_net
 from typing import Optional, Union
-from .utils import load_from_cache, HUGGINGFACE_BASE_URL, HEROKU_BASE_URL
+from .utils import load_from_cache, HUGGINGFACE_BASE_URL
 from .config import PretrainedConfig
 
 class PretrainedCell(nn.Cell):
@@ -48,7 +48,7 @@ class PretrainedCell(nn.Cell):
             assert os.path.isfile(model_file)
         elif pretrained_model_name_or_path in cls.pretrained_model_archive and not from_torch:
             logging.info("The checkpoint file not found, start to download.")
-            model_url = HEROKU_BASE_URL.format(cls.pretrained_model_archive[pretrained_model_name_or_path])
+            model_url = cls.pretrained_model_archive[pretrained_model_name_or_path]
             model_file = load_from_cache(pretrained_model_name_or_path + '.ckpt', model_url, force_download=force_download)
         elif pretrained_model_name_or_path in cls.pytorch_pretrained_model_archive_list:
             logging.info("The checkpoint file not found in archive list, start to download from torch.")

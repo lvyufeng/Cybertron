@@ -15,7 +15,6 @@ except (AttributeError, ImportError):
 
 CACHE_DIR = Path.home() / '.bert4ms'
 HUGGINGFACE_BASE_URL = 'https://huggingface.co/{}/resolve/main/pytorch_model.bin'
-HEROKU_BASE_URL='{}?download'
 
 def load_from_cache(name, url, cache_dir:str=None, force_download=False):
     """

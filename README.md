@@ -17,15 +17,15 @@ python setup.py install
 bert4ms提供类似于Transformers的编码体验，可以直接使用模型名一键加载，具体使用方式如下：
 
 ```python
+import mindspore
 from bert4ms import BertTokenizer, BertModel
 
 tokenizer = BertTokenizer.load('bert-base-uncased')
-model = BertModel.load('bert-base-uncased', force_download=True)
+model = BertModel.load('bert-base-uncased')
 model.set_train(False)
 
 # get tokenized inputs
-inputs = tokenizer("hello world")
-
+inputs = mindspore.Tensor([tokenizer.encode("Here is some text to encode", add_special_tokens=True)], mindspore.int32)
 # run model inference
 outputs = model(inputs)
 ```
