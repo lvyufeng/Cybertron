@@ -12,13 +12,13 @@ from ..common.layers import Dense, Embedding, CrossEntropyLoss
 from ..configs.bert import BertConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
-    'bert-base-uncased': "https://sharelist-lv.herokuapp.com/models/bert/bert-base-uncased.ckpt",
-    "bert-large-uncased": "https://sharelist-lv.herokuapp.com/models/bert/bert-large-uncased.ckpt",
-    "bert-base-cased": "https://sharelist-lv.herokuapp.com/models/bert/bert-base-cased.ckpt",
-    "bert-large-cased": "https://sharelist-lv.herokuapp.com/models/bert/bert-large-cased.ckpt",
-    "bert-base-multilingual-uncased": "https://sharelist-lv.herokuapp.com/models/bert/bert-base-multilingual-uncased.ckpt",
-    "bert-base-multilingual-cased": "https://sharelist-lv.herokuapp.com/models/bert/bert-base-multilingual-cased.ckpt",
-    "bert-base-chinese": "https://sharelist-lv.herokuapp.com/models/bert/bert-base-chinese.ckpt"
+    "bert-base-uncased": "https://huggingface.co/lvyufeng/bert/resolve/main/bert-base-uncased.ckpt",
+    "bert-large-uncased": "https://huggingface.co/lvyufeng/bert/resolve/main/bert-large-uncased.ckpt",
+    "bert-base-cased": "https://huggingface.co/lvyufeng/bert/resolve/main/bert-base-uncased.ckpt",
+    "bert-large-cased": "https://huggingface.co/lvyufeng/bert/resolve/main/bert-large-cased.ckpt",
+    "bert-base-multilingual-uncased": "https://huggingface.co/lvyufeng/bert/resolve/main/bert-base-multilingual-uncased.ckpt",
+    "bert-base-multilingual-cased": "https://huggingface.co/lvyufeng/bert/resolve/main/bert-base-multilingual-cased.ckpt",
+    "bert-base-chinese": "https://huggingface.co/lvyufeng/bert/resolve/main/bert-base-chinese.ckpt"
 }
 
 PYTORCH_PRETRAINED_MODEL_ARCHIVE_LIST = [

@@ -48,6 +48,6 @@ model = BertModel.load('bert-base-uncased', from_torch=True)
 
 ## Notice
 
-本仓库中使用Heroku搭建了一个临时的checkpoint存储，提供公网下载MindSpore版的Checkpoint的能力。由于Heroku的限制，30分钟没有访问则会自动下线，有新访问时会重新启动，因此可能会有数分钟的启动时间，如果下载失败请重试，或将`force_download`设置为`True`。
+所有的Checkpoint将会放到[Huggingface](https://huggingface.co/lvyufeng)，解决下载问题。
 
 此外，由于临时服务的不稳定性，**下载地址随时可能发生失效或更换**。若发生此类情况，请默认将`from_torch`设置为`True`。
