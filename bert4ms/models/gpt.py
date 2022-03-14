@@ -12,7 +12,7 @@ from ..common.layers import Dense, SequenceSummary, CrossEntropyLoss
 from ..configs.gpt import GPTConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
-    "openai-gpt": "https://sharelist-lv.herokuapp.com/models/gpt/openai-gpt.ckpt"
+    "openai-gpt": "https://huggingface.co/lvyufeng/gpt/resolve/main/openai-gpt.ckpt"
 }
 
 PYTORCH_PRETRAINED_MODEL_ARCHIVE_LIST = ["openai-gpt"]

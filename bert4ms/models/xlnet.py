@@ -13,6 +13,8 @@ from ..common.cell import PretrainedCell
 from ..configs.xlnet import XLNetConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
+    "xlnet-base-cased": "https://huggingface.co/lvyufeng/xlnet/resolve/main/xlnet-base-cased.ckpt", 
+    "xlnet-large-cased": "https://huggingface.co/lvyufeng/xlnet/resolve/main/xlnet-large-cased.ckpt"
 }
 
 PYTORCH_PRETRAINED_MODEL_ARCHIVE_LIST = ["xlnet-base-cased", "xlnet-large-cased"]

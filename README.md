@@ -8,8 +8,7 @@
 ### 源码安装
 
 ```bash
-git clone https://github.com/lvyufeng/bert4ms
-python setup.py install
+pip install git+https://github.com/lvyufeng/bert4ms
 ```
 
 ## 快速入门
@@ -49,5 +48,3 @@ model = BertModel.load('bert-base-uncased', from_torch=True)
 ## Notice
 
 所有的Checkpoint将会放到[Huggingface](https://huggingface.co/lvyufeng)，解决下载问题。
-
-此外，由于临时服务的不稳定性，**下载地址随时可能发生失效或更换**。若发生此类情况，请默认将`from_torch`设置为`True`。
