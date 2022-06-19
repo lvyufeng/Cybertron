@@ -44,6 +44,7 @@ PYTORCH_PRETRAINED_MODEL_ARCHIVE_LIST = [
     "TurkuNLP/bert-base-finnish-cased-v1",
     "TurkuNLP/bert-base-finnish-uncased-v1",
     "wietsedv/bert-base-dutch-cased",
+    "sentence-transformers/all-MiniLM-L6-v2"
 ]
 
 def torch_to_mindspore(pth_file):
