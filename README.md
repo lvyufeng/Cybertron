@@ -8,7 +8,10 @@
 ### 源码安装
 
 ```bash
+# From Github(outside GFW)
 pip install git+https://github.com/lvyufeng/bert4ms
+# From OpenI(inside GFW)
+pip install git+https://git.openi.org.cn/lvyufeng/bert4ms
 ```
 
 ## 快速入门
