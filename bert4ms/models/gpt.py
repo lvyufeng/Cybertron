@@ -6,9 +6,8 @@ import mindspore.numpy as mnp
 import mindspore.ops as ops
 from mindspore import Parameter
 from mindspore.common.initializer import initializer, Normal
-from ..common.activations import activation_map, GELU
-from ..common.cell import PretrainedCell
-from ..common.layers import Dense, SequenceSummary, CrossEntropyLoss
+from ..common.modules import activation_map, GELU, Dense, SequenceSummary, CrossEntropyLoss
+from ..common.abc import PretrainedCell
 from ..configs.gpt import GPTConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {

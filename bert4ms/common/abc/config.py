@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from .utils import load_from_cache
+from ..utils import load_from_cache
 
 class PretrainedConfig:
     pretrained_config_archive = {}

@@ -94,3 +94,10 @@ def convert_state_dict(pth_file):
             raise RuntimeError(f'Save checkpoint to {ms_ckpt_path} failed, please checkout the path.')
 
     return ms_ckpt_path
+
+class _RequiredParameter(object):
+    """Singleton class representing a required parameter for an Optimizer."""
+    def __repr__(self):
+        return "<required parameter>"
+
+required = _RequiredParameter()

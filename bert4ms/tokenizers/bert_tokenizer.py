@@ -23,7 +23,7 @@ import os
 import unicodedata
 from io import open
 
-from ..common.tokenizer import PreTrainedTokenizer
+from ..common.abc import PreTrainedTokenizer
 
 logger = logging.getLogger(__name__)
 

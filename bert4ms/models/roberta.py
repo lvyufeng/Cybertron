@@ -4,8 +4,7 @@ import mindspore.numpy as mnp
 from mindspore import Parameter
 from mindspore.common.initializer import initializer
 
-from bert4ms.common.activations import GELU
-from bert4ms.common.layers import Dense, CrossEntropyLoss
+from bert4ms.common.modules import GELU, Dense, CrossEntropyLoss
 from .bert import BertEmbeddings, BertModel, BertPretrainedCell
 from ..configs.roberta import RobertaConfig
 

@@ -1,4 +1,4 @@
-from ..common.config import PretrainedConfig
+from ..common.abc import PretrainedConfig
 
 CONFIG_ARCHIVE_MAP = {
     "xlnet-base-cased": "https://huggingface.co/xlnet-base-cased/raw/main/config.json",

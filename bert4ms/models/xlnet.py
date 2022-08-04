@@ -6,10 +6,10 @@ import mindspore.numpy as mnp
 import mindspore.ops as ops
 from mindspore import Parameter
 from mindspore.common.initializer import initializer, Normal
-from ..common.ops import *
-from ..common.layers import Dense, CrossEntropyLoss, SequenceSummary, PoolerAnswerClass, PoolerEndLogits, PoolerStartLogits
-from ..common.activations import activation_map, GELU
-from ..common.cell import PretrainedCell
+from ..common.modules import Dense, CrossEntropyLoss, SequenceSummary, PoolerAnswerClass, PoolerEndLogits, PoolerStartLogits, \
+    activation_map, GELU
+from ..common.abc import PretrainedCell
+from ..common.modules.ops import *
 from ..configs.xlnet import XLNetConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {

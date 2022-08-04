@@ -5,7 +5,7 @@ import six
 import os
 import logging
 from typing import Callable, Optional, Union
-from .utils import load_from_cache
+from ..utils import load_from_cache
 
 logger = logging.getLogger(__name__)
 

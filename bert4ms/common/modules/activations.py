@@ -2,8 +2,10 @@ import mindspore
 import mindspore.nn as nn
 import mindspore.ops as ops
 import mindspore.common.dtype as mstype
+from packaging import version
 from mindspore import Tensor
 from mindspore import context
+
 from .ops import Erf
 
 class GELU(nn.Cell):
@@ -49,9 +51,11 @@ class SiLU(nn.Cell):
     def construct(self, inputs):
         return inputs * self.sigmoid(inputs)
 
+version_flag = version.parse(mindspore.__version__) < version.parse('1.8.0')
+
 activation_map = {
     'relu': nn.ReLU(),
-    'gelu': GELU(False),
-    'gelu_approximate': GELU(),
+    'gelu': GELU(False) if version_flag else nn.GELU(False),
+    'gelu_approximate': GELU() if version_flag else nn.GELU(),
     'swish':SiLU()
 }

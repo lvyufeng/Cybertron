@@ -3,7 +3,7 @@ import os
 import mindspore.nn as nn
 from mindspore.train.serialization import load_checkpoint, load_param_into_net
 from typing import Optional, Union
-from .utils import load_from_cache, HUGGINGFACE_BASE_URL
+from ..utils import load_from_cache, HUGGINGFACE_BASE_URL
 from .config import PretrainedConfig
 
 class PretrainedCell(nn.Cell):

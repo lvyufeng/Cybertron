@@ -6,9 +6,8 @@ import mindspore.numpy as mnp
 import mindspore.common.dtype as mstype
 from mindspore import Parameter
 from mindspore.common.initializer import initializer
-from ..common.activations import activation_map, GELU
-from ..common.cell import PretrainedCell
-from ..common.layers import Dense, Embedding, CrossEntropyLoss
+from ..common.modules import activation_map, GELU, Dense, Embedding, CrossEntropyLoss
+from ..common.abc import PretrainedCell
 from ..configs.bert import BertConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
