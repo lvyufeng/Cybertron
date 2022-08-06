@@ -146,36 +146,6 @@ def _nll_loss(input, target, target_dim=-1, weight=None, ignore_index=None, redu
     loss = (1. - label_smoothing) * nll_loss + eps_i * smooth_loss
     return loss
 
-def clip_grad_norm(grads, max_norm: float, norm_type: float = 2.0, error_if_nonfinite: bool = False):
-    if isinstance(grads, mindspore.Tensor):
-        grads = [grads]
-    max_norm = float(max_norm)
-    norm_type = float(norm_type)
-    if len(grads) == 0:
-        return mindspore.Tensor(0., mindspore.float32)
-
-    if norm_type == inf:
-        norms = [grad.abs().max() for grad in grads]
-        total_norm = norms[0] if len(norms) == 1 else ops.max(ops.stack(norms))
-    else:
-        total_norm = norm(ops.stack([norm(grad, norm_type) for grad in grads]), norm_type)
-
-    if error_if_nonfinite and ops.logical_or(ops.isnan(total_norm), ops.bool_not(ops.isfinite(total_norm))):
-        raise(
-            f'The total norm of order {norm_type} for gradients from '
-            '`parameters` is non-finite, so it cannot be clipped. To disable '
-            'this error and scale the gradients by the non-finite norm anyway, '
-            'set `error_if_nonfinite=False`')
-    clip_coef = max_norm / (total_norm + 1e-6)
-    # Note: multiplying by the clamped coef is redundant when the coef is clamped to 1, but doing so
-    # avoids a `if clip_coef < 1:` conditional which can require a CPU <=> device synchronization
-    # when the gradients do not reside in CPU memory.
-    clip_coef_clamped = clip_coef.clip(None, 1.0)
-    new_grads = []
-    for grad in grads:
-        new_grads.append(ops.mul(grad, clip_coef_clamped))
-    return new_grads, total_norm
-
 @constexpr
 def raise_value_error(info):
     raise ValueError(info)
@@ -183,6 +153,10 @@ def raise_value_error(info):
 @constexpr
 def raise_runtime_error(info):
     raise RuntimeError(info)
+
+@constexpr
+def raise_type_error(info):
+    raise TypeError(info)
 
 inf = float('inf')
 
@@ -237,8 +211,8 @@ def masked_fill_(inputs:Tensor, mask:Tensor, value:float):
 
 def norm(x, ord=None, axis=None, keepdims=False):
     # Immediately handle some default, simple, fast, and common cases.
+    ndim = x.ndim
     if axis is None:
-        ndim = x.ndim
         if ((ord is None) or
             (ord in ('f', 'fro') and ndim == 2) or
             (ord == 2 and ndim == 1)):
@@ -251,17 +225,20 @@ def norm(x, ord=None, axis=None, keepdims=False):
             return ret
 
     # Normalize the `axis` argument to a tuple.
-    nd = x.ndim
     if axis is None:
-        axis = tuple(range(nd))
+        axis = tuple(range(ndim))
     elif not isinstance(axis, tuple):
-        try:
-            axis = int(axis)
-        except Exception as e:
-            raise TypeError("'axis' must be None, an integer or a tuple of integers") from e
+        # try:
+        #     axis = int(axis)
+        # except Exception as e:
+        #     raise TypeError("'axis' must be None, an integer or a tuple of integers") from e
         axis = (axis,)
+    if len(axis) > 2:
+        raise_value_error("Improper number of dimensions to norm.")
 
     if len(axis) == 1:
+        if isinstance(ord, str):
+            raise_value_error(f"Invalid norm order '{ord}' for vectors")
         if ord == inf:
             return ops.abs(x).max(axis=axis, keepdims=keepdims)
         elif ord == -inf:
@@ -284,8 +261,6 @@ def norm(x, ord=None, axis=None, keepdims=False):
             return sqrt(reduce_sum(s, axis=axis))
         # None of the str-type keywords for ord ('fro', 'nuc')
         # are valid for vectors
-        elif isinstance(ord, str):
-            raise_value_error(f"Invalid norm order '{ord}' for vectors")
         else:
             absx = ops.abs(x)
             absx **= ord
@@ -298,10 +273,13 @@ def norm(x, ord=None, axis=None, keepdims=False):
             return ret
     elif len(axis) == 2:
         row_axis, col_axis = axis
-        row_axis = normalize_axis_index(row_axis, nd)
-        col_axis = normalize_axis_index(col_axis, nd)
+        row_axis = normalize_axis_index(row_axis, ndim)
+        col_axis = normalize_axis_index(col_axis, ndim)
         if row_axis == col_axis:
             raise_value_error('Duplicate axes given.')
+        if ord not in [2, -2, 1, -1, inf, -inf, 'fro', 'f', 'nuc', None]:
+            raise_value_error("Invalid norm order for matrices.")
+
         if ord == 2:
             ret =  _multi_svd_norm(x, row_axis, col_axis, 'amax')
         elif ord == -2:
@@ -322,14 +300,15 @@ def norm(x, ord=None, axis=None, keepdims=False):
             if row_axis > col_axis:
                 row_axis -= 1
             ret = ops.reduce_sum(abs(x), axis=col_axis).min(axis=row_axis)
-        elif ord in [None, 'fro', 'f']:
+        elif ord in ['fro', 'f']:
             # conj = _get_cache_prim(ops.Conj)()
             conj = ops.Conj()
             ret = sqrt(ops.reduce_sum((conj(x) * x), axis=axis))
         elif ord == 'nuc':
             ret = _multi_svd_norm(x, row_axis, col_axis, sum)
         else:
-            raise_value_error("Invalid norm order for matrices.")
+            conj = ops.Conj()
+            ret = sqrt(ops.reduce_sum((conj(x) * x), axis=axis))
         if keepdims:
             ret_shape = list(x.shape)
             ret_shape[axis[0]] = 1
@@ -337,7 +316,7 @@ def norm(x, ord=None, axis=None, keepdims=False):
             ret = ret.reshape(ret_shape)
         return ret
     else:
-        raise_value_error("Improper number of dimensions to norm.")
+        return None
 
 def _multi_svd_norm(x, row_axis, col_axis, op):
     y = moveaxis(x.astype(mindspore.float32), (row_axis, col_axis), (-2, -1))
@@ -345,6 +324,8 @@ def _multi_svd_norm(x, row_axis, col_axis, op):
         result = ops.svd(y, compute_uv=False).max(axis=-1)
     elif op == 'amin':
         result = ops.svd(y, compute_uv=False).min(axis=-1)
+    else:
+        result = None
     return result
 
 def normalize_axis_index(axis, ndim):
@@ -354,6 +335,7 @@ def normalize_axis_index(axis, ndim):
         return ndim + axis
     else:
         raise_value_error('axis is out of range.')
+        return None
 
 def moveaxis(x, source, destination):
     perm = [i for i in range(x.ndim)]
@@ -370,16 +352,19 @@ def clip_grad_norm(grads, max_norm: float, norm_type: float = 2.0, error_if_nonf
     max_norm = float(max_norm)
     norm_type = float(norm_type)
     if len(grads) == 0:
-        return mindspore.Tensor(0., mindspore.float32)
+        return [], mindspore.Tensor(0., mindspore.float32)
 
     if norm_type == inf:
         norms = [grad.abs().max() for grad in grads]
         total_norm = norms[0] if len(norms) == 1 else ops.max(ops.stack(norms))
     else:
-        total_norm = norm(ops.stack([norm(grad, norm_type) for grad in grads]), norm_type)
+        norms = ()
+        for grad in grads:
+            norms += (norm(grad, norm_type),)
+        total_norm = norm(ops.stack(), norm_type)
 
     if error_if_nonfinite and ops.logical_or(ops.isnan(total_norm), ops.bool_not(ops.isfinite(total_norm))):
-        raise(
+        raise_runtime_error(
             f'The total norm of order {norm_type} for gradients from '
             '`parameters` is non-finite, so it cannot be clipped. To disable '
             'this error and scale the gradients by the non-finite norm anyway, '

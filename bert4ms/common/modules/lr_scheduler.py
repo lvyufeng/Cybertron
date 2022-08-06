@@ -2,6 +2,7 @@ import math
 import mindspore
 import mindspore.log as logger
 import mindspore.ops as ops
+import mindspore.nn as nn
 from mindspore import ms_class, Parameter, Tensor
 from mindspore.ops import constexpr
 
@@ -9,8 +10,8 @@ from mindspore.ops import constexpr
 def log_warning(info):
     logger.warning(info)
 
-@ms_class
-class _LRSchedule():
+# @ms_class
+class _LRSchedule(nn.Cell):
     """ Parent of all LRSchedules here. """
     warn_t_total = False # is set to True for schedules where progressing beyond t_total steps doesn't make sense
     def __init__(self, warmup=0.002, t_total=-1, **kw):
@@ -28,7 +29,7 @@ class _LRSchedule():
         self.warmup, self.t_total = float(warmup), float(t_total)
         self.warned_for_t_total_at_progress = Parameter(Tensor(-1., mindspore.float32), 'warned_for_t_total_at_progress')
 
-    def get_lr(self, step, nowarn=False):
+    def construct(self, step, nowarn=False):
         """
         :param step:    which of t_total steps we're on
         :param nowarn:  set to True to suppress warning regarding training beyond specified 't_total' steps
