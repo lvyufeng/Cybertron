@@ -2,7 +2,7 @@ import unittest
 import mindspore
 import torch
 import numpy as np
-from bert4ms.models import XLNetModel, XLNetConfig
+from cybertron.models import XLNetModel, XLNetConfig
 from mindspore import Tensor
 from mindspore import context
 from transformers import XLNetModel as ptXLNetModel

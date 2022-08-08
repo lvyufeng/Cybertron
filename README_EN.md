@@ -12,8 +12,8 @@ python setup.py install
 ## Quick Start
 
 ```python
-from bert4ms import BertTokenizer, BertModel
-from bert4ms import compile_model
+from cybertron import BertTokenizer, BertModel
+from cybertron import compile_model
 
 tokenizer = BertTokenizer.load('bert-base-uncased')
 model = BertModel.load('bert-base-uncased')

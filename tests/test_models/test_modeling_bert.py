@@ -2,7 +2,7 @@ import unittest
 import mindspore
 import torch
 import numpy as np
-from bert4ms.models import BertModel, BertConfig, BertForPretraining
+from cybertron.models import BertModel, BertConfig, BertForPretraining
 from mindspore import Tensor
 from mindspore import context
 from transformers import BertModel as ptBertModel

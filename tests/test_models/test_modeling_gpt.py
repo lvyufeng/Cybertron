@@ -2,7 +2,7 @@ import unittest
 import mindspore
 import torch
 import numpy as np
-from bert4ms.models import GPTModel, GPTConfig
+from cybertron.models import GPTModel, GPTConfig
 from mindspore import Tensor
 from mindspore import context
 from transformers import OpenAIGPTModel

@@ -1,7 +1,7 @@
 import unittest
 import os
-from bert4ms.common.utils import load_from_cache
-from bert4ms.configs.bert import CONFIG_ARCHIVE_MAP
+from cybertron.common.utils import load_from_cache
+from cybertron.configs.bert import CONFIG_ARCHIVE_MAP
 
 class TestLoadFromCache(unittest.TestCase):
     def test_load_from_cache_default_path(self):

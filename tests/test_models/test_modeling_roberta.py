@@ -2,7 +2,7 @@ import unittest
 import mindspore
 import torch
 import numpy as np
-from bert4ms.models import RobertaModel, RobertaConfig, RobertaForMaskedLM, RobertaForSequenceClassification
+from cybertron.models import RobertaModel, RobertaConfig, RobertaForMaskedLM, RobertaForSequenceClassification
 from mindspore import Tensor
 from mindspore import context
 from transformers import RobertaModel as ptRobertaModel

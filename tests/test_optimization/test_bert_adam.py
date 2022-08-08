@@ -1,9 +1,9 @@
 import unittest
 import mindspore
 import mindspore.nn as nn
-from bert4ms import BertAdam
-from bert4ms.common.modules.lr_scheduler import ConstantLR, WarmupLinearSchedule
-from bert4ms.common.api import grad
+from cybertron import BertAdam
+from cybertron.common.modules.lr_scheduler import ConstantLR, WarmupLinearSchedule
+from cybertron.common.api import grad
 
 class ScheduleInitTest(unittest.TestCase):
     def test_bert_sched_init(self):
