@@ -28,7 +28,7 @@ class Optimizer(nn.Cell):
     def parameters(self):
         flatten_params = []
         for param_group in self.param_groups:
-            flatten_params.extend([param[0] for param in param_group])
+            flatten_params.extend([param for param in param_group[0]])
 
         return flatten_params
     
@@ -43,6 +43,7 @@ class Optimizer(nn.Cell):
                 specific optimization options.
         """
         assert isinstance(param_group, dict), "param group must be a dict"
+        assert 'params' in param_group
 
         params = param_group['params']
         if isinstance(params, mindspore.Parameter):
@@ -58,12 +59,15 @@ class Optimizer(nn.Cell):
                 raise TypeError("optimizer can only optimize Parameter, "
                                 "but one of the params is " + str(type(param)))
 
+        new_param_group = OrderedDict({'params': param_group['params']})
         for name, default in self.defaults.items():
             if default is required and name not in param_group:
                 raise ValueError("parameter group didn't specify a value of required optimization parameter " +
                                  name)
+            elif name in param_group:
+                new_param_group.setdefault(name, param_group[name])
             else:
-                param_group.setdefault(name, default)
+                new_param_group.setdefault(name, default)
 
         params = param_group['params']
         if len(params) != len(set(params)):
@@ -77,7 +81,7 @@ class Optimizer(nn.Cell):
         if not param_set.isdisjoint(set(param_group['params'])):
             raise ValueError("some parameters appear in more than one parameter group")
 
-        self.param_groups.append([v for _, v in param_group.items()])
+        self.param_groups.append([v for _, v in new_param_group.items()])
 
 class BertAdam(Optimizer):
     def __init__(self, params, lr=required, warmup=-1, t_total=-1, schedule='warmup_linear',
