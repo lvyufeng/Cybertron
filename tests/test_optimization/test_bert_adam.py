@@ -1,4 +1,5 @@
 import unittest
+import pytest
 import mindspore
 import mindspore.nn as nn
 from cybertron import BertAdam
@@ -6,6 +7,7 @@ from cybertron.common.modules.lr_scheduler import ConstantLR, WarmupLinearSchedu
 from cybertron.common.api import grad
 
 class ScheduleInitTest(unittest.TestCase):
+    @pytest.mark.action
     def test_bert_sched_init(self):
         m = mindspore.nn.Dense(50, 50)
         optim = BertAdam(m.trainable_params(), lr=0.001, warmup=.1, t_total=1000, schedule=None)
@@ -18,11 +20,13 @@ class ScheduleInitTest(unittest.TestCase):
 
 class OptimizationTest(unittest.TestCase):
 
+    @pytest.mark.action
     def assertListAlmostEqual(self, list1, list2, tol):
         self.assertEqual(len(list1), len(list2))
         for a, b in zip(list1, list2):
             self.assertAlmostEqual(a, b, delta=tol)
 
+    @pytest.mark.action
     def test_adam(self):
         w = mindspore.Parameter(mindspore.Tensor([0.1, -0.2, -0.1], mindspore.float32))
         target = mindspore.Tensor([0.4, 0.2, -0.5], mindspore.float32)

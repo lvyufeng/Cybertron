@@ -1,5 +1,8 @@
 # Cybertron
 
+[![Run tests](https://github.com/lvyufeng/cybertron/actions/workflows/run_tests.yml/badge.svg)](https://github.com/lvyufeng/cybertron/actions/workflows/run_tests.yml)
+
+
 使用[MindSpore](https://www.mindspore.cn/)实现的预训练模型框架，支持各类Transformers，兼容Huggingface的Transformers实现。针对MindSpore提供的自动并行特性，逐步提供相关能力，给使用MindSpore的同学们做科研提供便利。
 
 ## 安装

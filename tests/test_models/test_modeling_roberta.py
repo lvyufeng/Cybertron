@@ -1,4 +1,5 @@
 import unittest
+import pytest
 import mindspore
 import torch
 import numpy as np
@@ -8,6 +9,7 @@ from mindspore import context
 from transformers import RobertaModel as ptRobertaModel
 
 class TestModelingRoberta(unittest.TestCase):
+    @pytest.mark.action
     def test_modeling_roberta_pynative(self):
         context.set_context(mode=context.PYNATIVE_MODE)
         config = RobertaConfig()
@@ -19,6 +21,7 @@ class TestModelingRoberta(unittest.TestCase):
         assert outputs.shape == (1, 512, 768)
         assert pooled.shape == (1, 768)
 
+    @pytest.mark.action
     def test_modeling_roberta_graph(self):
         context.set_context(mode=context.GRAPH_MODE)
         config = RobertaConfig()

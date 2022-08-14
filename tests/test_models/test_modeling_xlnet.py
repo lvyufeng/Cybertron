@@ -1,4 +1,5 @@
 import unittest
+import pytest
 import mindspore
 import torch
 import numpy as np
@@ -8,9 +9,10 @@ from mindspore import context
 from transformers import XLNetModel as ptXLNetModel
 
 class TestModelingXLNet(unittest.TestCase):
+    @pytest.mark.action
     def test_modeling_xlnet_pynative(self):
         context.set_context(mode=context.PYNATIVE_MODE)
-        config = XLNetConfig()
+        config = XLNetConfig(n_layer=2, n_head=4)
         model = XLNetModel(config)
 
         input_ids = Tensor(np.random.randn(1, 512), mindspore.int32)
@@ -19,9 +21,10 @@ class TestModelingXLNet(unittest.TestCase):
         assert outputs.shape == (1, 512, 768)
         assert len(new_mems) == config.n_layer
 
+    @pytest.mark.action
     def test_modeling_xlnet_graph(self):
         context.set_context(mode=context.GRAPH_MODE)
-        config = XLNetConfig()
+        config = XLNetConfig(n_layer=2, n_head=4)
         model = XLNetModel(config)
 
         input_ids = Tensor(np.random.randn(1, 512), mindspore.int32)

@@ -1,4 +1,5 @@
 import unittest
+import pytest
 import mindspore
 import torch
 import numpy as np
@@ -8,6 +9,7 @@ from mindspore import context
 from transformers import BertModel as ptBertModel
 
 class TestModelingBert(unittest.TestCase):
+    @pytest.mark.action
     def test_modeling_bert_pynative(self):
         context.set_context(mode=context.PYNATIVE_MODE)
         config = BertConfig()
@@ -19,6 +21,7 @@ class TestModelingBert(unittest.TestCase):
         assert outputs.shape == (1, 512, 768)
         assert pooled.shape == (1, 768)
 
+    @pytest.mark.action
     def test_modeling_bert_graph(self):
         context.set_context(mode=context.GRAPH_MODE)
         config = BertConfig()
@@ -30,6 +33,7 @@ class TestModelingBert(unittest.TestCase):
         assert outputs.shape == (1, 512, 768)
         assert pooled.shape == (1, 768)
 
+    @pytest.mark.action
     def test_modeling_bert_pretraining_pynative(self):
         context.set_context(mode=context.PYNATIVE_MODE)
         config = BertConfig()
@@ -41,6 +45,7 @@ class TestModelingBert(unittest.TestCase):
         assert mlm_logits.shape == (1, 512, config.vocab_size)
         assert nsp_logits.shape == (1, 2)
 
+    @pytest.mark.action
     def test_modeling_bert_pretraining_graph(self):
         context.set_context(mode=context.GRAPH_MODE)
         config = BertConfig()

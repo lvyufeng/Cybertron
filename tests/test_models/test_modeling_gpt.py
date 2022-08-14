@@ -1,4 +1,5 @@
 import unittest
+import pytest
 import mindspore
 import torch
 import numpy as np
@@ -8,6 +9,7 @@ from mindspore import context
 from transformers import OpenAIGPTModel
 
 class TestModelingGPT(unittest.TestCase):
+    @pytest.mark.action
     def test_modeling_gpt_pynative(self):
         context.set_context(mode=context.PYNATIVE_MODE)
         config = GPTConfig()
@@ -18,6 +20,7 @@ class TestModelingGPT(unittest.TestCase):
         (outputs, ) = model(input_ids)
         assert outputs.shape == (1, 512, 768)
 
+    @pytest.mark.action
     def test_modeling_gpt_graph(self):
         context.set_context(mode=context.GRAPH_MODE)
         config = GPTConfig()
