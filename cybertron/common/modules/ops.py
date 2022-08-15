@@ -213,12 +213,12 @@ def masked_fill_(inputs:Tensor, mask:Tensor, value:float):
 @constexpr
 def _check_axis(axis, ord, ndim):
     if axis is None:
+        axis = tuple(range(ndim))
         if ((ord is None) or
             (ord in ('f', 'fro') and ndim == 2) or
             (ord == 2 and ndim == 1)):
-            return None, True
+            return axis, True
         else:
-            axis = tuple(range(ndim))
             return axis, False
     else:
         if isinstance(axis, int):
