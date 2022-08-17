@@ -1,0 +1,7 @@
+pytest
+mindspore-gpu>=1.8.1
+torch
+numpy
+requests
+tqdm
+transformers==2.0.0

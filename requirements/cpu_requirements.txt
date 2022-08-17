@@ -1,4 +1,6 @@
 pytest
+pylint
+mindspore>=1.8.1
 torch
 numpy
 requests

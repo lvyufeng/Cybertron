@@ -205,10 +205,6 @@ def bmm(x, y, transpose_x=False, transpose_y=False):
     # return _get_cache_prim(ops.BatchMatMul)(transpose_x, transpose_y)(x, y)
     return ops.BatchMatMul(transpose_x, transpose_y)(x, y)
 
-def masked_fill_(inputs:Tensor, mask:Tensor, value:float):
-    # return ops.masked_fill(inputs, mask, value)
-    return input
-
 
 @constexpr
 def _check_axis(axis, ord, ndim):
