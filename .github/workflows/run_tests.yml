@@ -68,6 +68,7 @@ jobs:
 
   kaggle-gpu:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' }}
     steps:
     - uses: actions/checkout@v3
     - name: Set up Python 3.7
@@ -76,12 +77,7 @@ jobs:
         python-version: 3.7
     - uses: "lvyufeng/action-kaggle-gpu-test@latest"
       with:
-        git_access_token: "${{ secrets.GIT_READ_ONLY_ACCESS_TOKEN }}"
-        kaggle_api_key: "${{ secrets.KAGGLE_API_KEY }}"
         kaggle_username: "${{ secrets.KAGGLE_USERNAME }}"
-        repository_name: "${{ github.repository }}"
-        test_folder: tests
-        python_requirements: requirements/gpu_requirements.txt
-        env_name: mindspore
-        python_version: 3.7
-        cuda_version: 11.1
+        kaggle_key: "${{ secrets.KAGGLE_API_KEY }}"
+        kernel_name: Cybertron
+        kernel_job_file: .github/kaggle_kernel_job.py
