@@ -30,8 +30,8 @@ class Optimizer(nn.Cell):
         for param_group in self.param_groups:
             flatten_params.extend([param for param in param_group[0]])
 
-        return flatten_params
-    
+        return ParameterTuple(flatten_params)
+
     def add_param_group(self, param_group):
         r"""Add a param group to the :class:`Optimizer` s `param_groups`.
 
