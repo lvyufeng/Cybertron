@@ -13,9 +13,9 @@
 
 ```bash
 # From Github(outside GFW)
-pip install git+https://github.com/lvyufeng/cybertron
+pip install git+https://github.com/lvyufeng/cybertron@ms1.7
 # From OpenI(inside GFW)
-pip install git+https://git.openi.org.cn/lvyufeng/cybertron
+pip install git+https://git.openi.org.cn/lvyufeng/cybertron@ms1.7
 ```
 
 ## 快速入门
