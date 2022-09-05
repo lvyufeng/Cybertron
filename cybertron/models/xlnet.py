@@ -6,8 +6,8 @@ import mindspore.numpy as mnp
 import mindspore.ops as ops
 from mindspore import Parameter
 from mindspore.common.initializer import initializer, Normal
-from ..common.modules import Dense, CrossEntropyLoss, SequenceSummary, PoolerAnswerClass, PoolerEndLogits, PoolerStartLogits, \
-    activation_map, GELU
+from ..common.modules import Dense, SequenceSummary, PoolerAnswerClass, PoolerEndLogits, PoolerStartLogits, \
+    activation_map
 from ..common.abc import PretrainedCell
 from ..common.modules.ops import *
 from ..configs.xlnet import XLNetConfig
@@ -234,7 +234,7 @@ class XLNetFeedForward(nn.Cell):
         self.layer_2 = Dense(config.d_inner, config.d_model)
         self.dropout = nn.Dropout(1-config.dropout)
         ff_activation = 'gelu_approximate' if config.ff_activation == 'gelu' else config.ff_activation
-        self.activation_function = activation_map.get(ff_activation, GELU())
+        self.activation_function = activation_map.get(ff_activation, nn.GELU())
 
     def construct(self, inp):
         output = inp
@@ -563,7 +563,7 @@ class XLNetLMHeadModel(XLNetPretrainedCell):
 
         if labels is not None:
             # Flatten the tokens
-            loss_fct = CrossEntropyLoss(ignore_index=-1)
+            loss_fct = nn.CrossEntropyLoss(ignore_index=-1)
             loss = loss_fct(logits.view(-1, logits.size(-1)),
                             labels.view(-1))
             outputs = (loss,) + outputs
@@ -602,7 +602,7 @@ class XLNetForSequenceClassification(XLNetPretrainedCell):
                 loss_fct = nn.MSELoss()
                 loss = loss_fct(logits.view(-1), labels.view(-1))
             else:
-                loss_fct = CrossEntropyLoss()
+                loss_fct = nn.CrossEntropyLoss()
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             outputs = (loss,) + outputs
 
@@ -639,7 +639,7 @@ class XLNetForMultipleChoice(XLNetPretrainedCell):
         outputs = (reshaped_logits,) + transformer_outputs[1:]  # Keep mems, hidden states, attentions if there are in it
 
         if labels is not None:
-            loss_fct = CrossEntropyLoss()
+            loss_fct = nn.CrossEntropyLoss()
             loss = loss_fct(reshaped_logits, labels.view(-1))
             outputs = (loss,) + outputs
 
@@ -680,7 +680,7 @@ class XLNetForQuestionAnsweringSimple(XLNetPretrainedCell):
             start_positions.clip(0, ignored_index)
             end_positions.clip(0, ignored_index)
 
-            loss_fct = CrossEntropyLoss(ignore_index=ignored_index)
+            loss_fct = nn.CrossEntropyLoss(ignore_index=ignored_index)
             start_loss = loss_fct(start_logits, start_positions)
             end_loss = loss_fct(end_logits, end_positions)
             total_loss = (start_loss + end_loss) / 2
@@ -726,7 +726,7 @@ class XLNetForQuestionAnswering(XLNetPretrainedCell):
             # during training, compute the end logits based on the ground truth of the start position
             end_logits = self.end_logits(hidden_states, start_positions=start_positions, p_mask=p_mask)
 
-            loss_fct = CrossEntropyLoss()
+            loss_fct = nn.CrossEntropyLoss()
             start_loss = loss_fct(start_logits, start_positions)
             end_loss = loss_fct(end_logits, end_positions)
             total_loss = (start_loss + end_loss) / 2

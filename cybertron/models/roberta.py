@@ -4,7 +4,7 @@ import mindspore.numpy as mnp
 from mindspore import Parameter
 from mindspore.common.initializer import initializer
 
-from cybertron.common.modules import GELU, Dense, CrossEntropyLoss
+from cybertron.common.modules import Dense
 from .bert import BertEmbeddings, BertModel, BertPretrainedCell
 from ..configs.roberta import RobertaConfig
 
@@ -55,7 +55,7 @@ class RobertaLMHead(nn.Cell):
 
         self.decoder = Dense(config.hidden_size, config.vocab_size, has_bias=False)
         self.bias = Parameter(initializer('zeros', config.vocab_size), 'bias')
-        self.gelu = GELU()
+        self.gelu = nn.GELU()
 
     def construct(self, features):
         x = self.dense(features)
@@ -104,7 +104,7 @@ class RobertaForMaskedLM(BertPretrainedCell):
         outputs = (prediction_scores,) + outputs[2:]  # Add hidden states and attention if they are here
 
         if masked_lm_labels is not None:
-            loss_fct = CrossEntropyLoss(ignore_index=-1)
+            loss_fct = nn.CrossEntropyLoss(ignore_index=-1)
             masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1))
             outputs = (masked_lm_loss,) + outputs
 
@@ -138,7 +138,7 @@ class RobertaForSequenceClassification(BertPretrainedCell):
                 loss_fct = nn.MSELoss()
                 loss = loss_fct(logits.view(-1), labels.view(-1))
             else:
-                loss_fct = CrossEntropyLoss()
+                loss_fct = nn.CrossEntropyLoss()
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             outputs = (loss,) + outputs
 
@@ -174,7 +174,7 @@ class RobertaForMultipleChoice(BertPretrainedCell):
         outputs = (reshaped_logits,) + outputs[2:]  # add hidden states and attention if they are here
 
         if labels is not None:
-            loss_fct = CrossEntropyLoss()
+            loss_fct = nn.CrossEntropyLoss()
             loss = loss_fct(reshaped_logits, labels)
             outputs = (loss,) + outputs
 

@@ -6,7 +6,7 @@ import mindspore.numpy as mnp
 import mindspore.common.dtype as mstype
 from mindspore import Parameter
 from mindspore.common.initializer import initializer
-from ..common.modules import activation_map, GELU, Dense, Embedding, CrossEntropyLoss
+from ..common.modules import activation_map, Dense, Embedding
 from ..common.abc import PretrainedCell
 from ..configs.bert import BertConfig
 
@@ -198,7 +198,7 @@ class BertIntermediate(nn.Cell):
     def __init__(self, config):
         super(BertIntermediate, self).__init__()
         self.dense = Dense(config.hidden_size, config.intermediate_size)
-        self.intermediate_act_fn = activation_map.get(config.hidden_act, GELU(False))
+        self.intermediate_act_fn = activation_map.get(config.hidden_act, nn.GELU(False))
 
     def construct(self, hidden_states):
         hidden_states = self.dense(hidden_states)
@@ -280,7 +280,7 @@ class BertPredictionHeadTransform(nn.Cell):
     def __init__(self, config):
         super(BertPredictionHeadTransform, self).__init__()
         self.dense = Dense(config.hidden_size, config.hidden_size)
-        self.transform_act_fn = activation_map.get(config.hidden_act, GELU(False))
+        self.transform_act_fn = activation_map.get(config.hidden_act, nn.GELU(False))
         self.layer_norm = nn.LayerNorm((config.hidden_size,), epsilon=config.layer_norm_eps)
 
     def construct(self, hidden_states):
@@ -387,7 +387,7 @@ class BertForPretraining(BertPretrainedCell):
 
         self.cls.predictions.decoder.weight = self.bert.embeddings.word_embeddings.embedding_table
     
-        self.loss_fct = CrossEntropyLoss(ignore_index=-1)
+        self.loss_fct = nn.CrossEntropyLoss(ignore_index=-1)
 
     def construct(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None,
                   masked_lm_labels=None, next_sentence_label=None):
@@ -432,7 +432,7 @@ class BertForMaskedLM(BertPretrainedCell):
 
         outputs = (prediction_scores,) + outputs[:2]
         if masked_lm_labels is not None:
-            loss_fct = CrossEntropyLoss(ignore_index=-1)
+            loss_fct = nn.CrossEntropyLoss(ignore_index=-1)
             masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1))
             outputs = (masked_lm_loss,) + outputs
 
@@ -458,7 +458,7 @@ class BertForNextSentencePrediction(BertPretrainedCell):
 
         outputs = (seq_relationship_score,) + outputs[2:]  # add hidden states and attention if they are here
         if next_sentence_label is not None:
-            loss_fct = CrossEntropyLoss(ignore_index=-1)
+            loss_fct = nn.CrossEntropyLoss(ignore_index=-1)
             next_sentence_loss = loss_fct(seq_relationship_score.view(-1, 2), next_sentence_label.view(-1))
             outputs = (next_sentence_loss,) + outputs
 
@@ -493,7 +493,7 @@ class BertForSequenceClassification(BertPretrainedCell):
                 loss_fct = nn.MSELoss()
                 loss = loss_fct(logits.view(-1), labels.view(-1))
             else:
-                loss_fct = CrossEntropyLoss()
+                loss_fct = nn.CrossEntropyLoss()
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             outputs = (loss,) + outputs
 
@@ -531,7 +531,7 @@ class BertForMultipleChoice(BertPretrainedCell):
         outputs = (reshaped_logits,) + outputs[2:]  # add hidden states and attention if they are here
 
         if labels is not None:
-            loss_fct = CrossEntropyLoss()
+            loss_fct = nn.CrossEntropyLoss()
             loss = loss_fct(reshaped_logits, labels)
             outputs = (loss,) + outputs
 
@@ -561,7 +561,7 @@ class BertForTokenClassification(BertPretrainedCell):
 
         outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
         if labels is not None:
-            loss_fct = CrossEntropyLoss()
+            loss_fct = nn.CrossEntropyLoss()
             # Only keep active parts of the loss
             if attention_mask is not None:
                 active_loss = attention_mask.view(-1) == 1
@@ -604,7 +604,7 @@ class BertForQuestionAnswering(BertPretrainedCell):
             start_positions.clip(0, ignored_index)
             end_positions.clip(0, ignored_index)
 
-            loss_fct = CrossEntropyLoss(ignore_index=ignored_index)
+            loss_fct = nn.CrossEntropyLoss(ignore_index=ignored_index)
             start_loss = loss_fct(start_logits, start_positions)
             end_loss = loss_fct(end_logits, end_positions)
             total_loss = (start_loss + end_loss) / 2

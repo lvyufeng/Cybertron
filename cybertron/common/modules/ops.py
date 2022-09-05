@@ -4,40 +4,7 @@ import mindspore.nn as nn
 import mindspore.common.dtype as mstype
 from mindspore import Tensor
 from mindspore.ops import constexpr
-# from mindspore.ops._primitive_cache import _get_cache_prim
-
-
-class Erf(nn.Cell):
-    def __init__(self):
-        super().__init__()
-        self.v1 = Tensor(1.26551223, mstype.float32)
-        self.v2 = Tensor(1.00002368, mstype.float32)
-        self.v3 = Tensor(0.37409196, mstype.float32)
-        self.v4 = Tensor(0.09678418, mstype.float32)
-        self.v5 = Tensor(-0.18628806, mstype.float32)
-        self.v6 = Tensor(0.27886807, mstype.float32)
-        self.v7 = Tensor(-1.13520398, mstype.float32)
-        self.v8 = Tensor(1.48851587, mstype.float32)
-        self.v9 = Tensor(-0.82215223, mstype.float32)
-        self.v10 = Tensor(0.17087277, mstype.float32)
-
-    def construct(self, inputs):
-        inputs_dtype = inputs.dtype
-        intermidiate = 1.0 / (1.0 + 0.5 * ops.absolute(inputs))
-        ans = 1 - intermidiate * ops.exp(ops.neg_tensor(ops.pows(inputs, 2)) - self.v1.astype(inputs_dtype) +
-                                         intermidiate * (self.v2.astype(inputs_dtype) +
-                                         intermidiate * (self.v3.astype(inputs_dtype) +
-                                         intermidiate * (self.v4.astype(inputs_dtype) +
-                                         intermidiate * (self.v5.astype(inputs_dtype) +
-                                         intermidiate * (self.v6.astype(inputs_dtype) +
-                                         intermidiate * (self.v7.astype(inputs_dtype) +
-                                         intermidiate * (self.v8.astype(inputs_dtype) +
-                                         intermidiate * (self.v9.astype(inputs_dtype) +
-                                         intermidiate * (self.v10.astype(inputs_dtype)))))))))))
-        cond = ops.GreaterEqual()(inputs, 0.0)
-
-        result = ops.Select()(cond, ans, -ans)
-        return result
+from mindspore.ops._primitive_cache import _get_cache_prim
 
 def ibnd_jbnd_to_ijbn(a, b):
     # a -> (i, 1, b, n, d)
@@ -92,60 +59,6 @@ def blh_bl_to_bh(a, b):
     out = a * b
     return out.sum(1)
 
-def log_softmax(input, axis=-1):
-    return ops.LogSoftmax(axis)(input)
-
-def cross_entropy(input, target, weight=None, ignore_index=-100, reduction='mean', label_smoothing=0.0):
-    return nll_loss(log_softmax(input, 1), target, weight, ignore_index, reduction, label_smoothing)
-
-def nll_loss(input, target, weight=None, ignore_index=None, reduction='mean', label_smoothing=0.0):
-    ndim = input.ndim
-    if ndim == 2:
-        ret = _nll_loss(input, target, -1, weight, ignore_index, reduction)
-    elif input.ndim == 4:
-        ret = _nll_loss(input, target, 1, weight, ignore_index, reduction)
-    else:
-        # ndim == 3 or ndim > 4
-        n = input.shape[0]
-        c = input.shape[1]
-        out_size = (n,) + input.shape[2:]
-        input = input.view(n, c, 1, -1)
-        target = target.view(n, 1, -1)
-        if reduction != 'none':
-            ret = _nll_loss(input, target, 1, weight, ignore_index, reduction)
-        else:
-            ret = _nll_loss(input, target, 1, weight, ignore_index)
-            ret = ret.view(out_size)
-    return ret
-
-def _nll_loss(input, target, target_dim=-1, weight=None, ignore_index=None, reduction='none', label_smoothing=0.0):
-    if target.ndim == input.ndim - 1:
-        target = target.expand_dims(target_dim)
-    nll_loss = -ops.gather_d(input, target_dim, target)
-    smooth_loss = -input.sum(axis=target_dim, keepdims=True)
-    if weight is not None:
-        loss_weights = ops.gather(weight, target, 0)
-        nll_loss = nll_loss * loss_weights
-    else:
-        loss_weights = ops.ones_like(nll_loss)
-    if ignore_index is not None:
-        non_pad_mask = ops.equal(target, ignore_index)
-        nll_loss = nll_loss.masked_fill(non_pad_mask, 0.)
-        loss_weights = loss_weights.masked_fill(non_pad_mask, 0.)
-        smooth_loss = smooth_loss.masked_fill(non_pad_mask, 0.)
-    else:
-        nll_loss = nll_loss.squeeze(target_dim)
-        smooth_loss = smooth_loss.squeeze(target_dim)
-
-    if reduction == 'sum':
-        nll_loss = nll_loss.sum()
-    if reduction == 'mean':
-        nll_loss = nll_loss.sum() / loss_weights.sum()
-
-    eps_i = label_smoothing / input.shape[target_dim]
-    loss = (1. - label_smoothing) * nll_loss + eps_i * smooth_loss
-    return loss
-
 @constexpr
 def raise_value_error(info):
     raise ValueError(info)
@@ -190,10 +103,9 @@ def dot(a, b):
 def sqrt(x):
     return ops.sqrt(x.astype(mindspore.float32))
 
-_reciprocal = ops.Reciprocal()
 def reciprocal(x):
     if isinstance(x, Tensor):
-        # reciprocal = _get_cache_prim(ops.Reciprocal)()
+        _reciprocal = _get_cache_prim(ops.Reciprocal)()
         return _reciprocal(x)
     return 1/x
 
@@ -202,8 +114,7 @@ def get_grads():
     pass
 
 def bmm(x, y, transpose_x=False, transpose_y=False):
-    # return _get_cache_prim(ops.BatchMatMul)(transpose_x, transpose_y)(x, y)
-    return ops.BatchMatMul(transpose_x, transpose_y)(x, y)
+    return _get_cache_prim(ops.BatchMatMul)(transpose_x, transpose_y)(x, y)
 
 
 @constexpr
@@ -250,7 +161,8 @@ def norm(x, ord=None, axis=None, keepdims=False):
         return ret
 
     if isinstance(ord, int):
-        return ops.LpNorm(axis, ord, keepdims)
+        _lp_norm = _get_cache_prim(ops.LpNorm)(axis, ord, keepdims)
+        return _lp_norm(x)
 
     if len(axis) == 1:
         if ord == inf:
@@ -259,19 +171,16 @@ def norm(x, ord=None, axis=None, keepdims=False):
             return ops.abs(x).min(axis=axis, keepdims=keepdims)
         elif ord is None:
             # special case for speedup
-            # conj = _get_cache_prim(ops.Conj)()
-            conj = ops.Conj()
+            conj = _get_cache_prim(ops.Conj)()
             s = conj(x) * x
-            # reduce_sum = _get_cache_prim(ops.ReduceSum)(keepdims)
-            reduce_sum = ops.ReduceSum(keepdims)
+            reduce_sum = _get_cache_prim(ops.ReduceSum)(keepdims)
             return sqrt(reduce_sum(s, axis=axis))
         # None of the str-type keywords for ord ('fro', 'nuc')
         # are valid for vectors
         else:
             absx = ops.abs(x)
             absx **= ord
-            # reduce_sum = _get_cache_prim(ops.ReduceSum)(keepdims)
-            reduce_sum = ops.ReduceSum(keepdims)
+            reduce_sum = _get_cache_prim(ops.ReduceSum)(keepdims)
             ret = reduce_sum(absx, axis=axis)
             ret **= reciprocal(ord)
             if ops.isnan(ret):
@@ -284,7 +193,6 @@ def norm(x, ord=None, axis=None, keepdims=False):
         if row_axis == col_axis:
             raise_value_error('Duplicate axes given.')
 
-    
         if ord == inf:
             if row_axis > col_axis:
                 row_axis -= 1
@@ -294,13 +202,12 @@ def norm(x, ord=None, axis=None, keepdims=False):
                 row_axis -= 1
             ret = ops.reduce_sum(abs(x), axis=col_axis).min(axis=row_axis)
         elif ord in ['fro', 'f']:
-            # conj = _get_cache_prim(ops.Conj)()
-            conj = ops.Conj()
+            conj = _get_cache_prim(ops.Conj)()
             ret = sqrt(ops.reduce_sum((conj(x) * x), axis=axis))
         elif ord == 'nuc':
             ret = _multi_svd_norm(x, row_axis, col_axis, sum)
         else:
-            conj = ops.Conj()
+            conj = _get_cache_prim(ops.Conj)()
             ret = sqrt(ops.reduce_sum((conj(x) * x), axis=axis))
         if keepdims:
             ret_shape = list(x.shape)

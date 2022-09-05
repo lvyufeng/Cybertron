@@ -8,5 +8,10 @@ setup(
     author='lvyufeng',
     author_email='lvyufeng2007@hotmail.com',
     license='Apache',
-    packages=find_packages()
+    packages=find_packages(),
+    install_requires=[
+        'numpy',
+        'requests',
+        'tqdm'
+    ],
 )

@@ -6,7 +6,7 @@ import mindspore.numpy as mnp
 from typing import Optional
 from mindspore.common.initializer import initializer, Normal, Uniform, HeUniform, _calculate_fan_in_and_fan_out
 from mindspore import Tensor
-from .ops import cross_entropy, blh_bl_to_bh
+from .ops import blh_bl_to_bh
 
 class Dense(nn.Dense):
     def __init__(self, in_channels, out_channels, weight_init=None, bias_init=None, has_bias=True, activation=None):
@@ -30,26 +30,6 @@ class Embedding(nn.Embedding):
         embedding = cls(rows, cols, embedding_table=embeddings, padding_idx=padding_idx)
         embedding.embedding_table.requires_grad = not freeze
         return embedding
-
-class CrossEntropyLoss(nn.Cell):
-    reduction_list = ['sum', 'mean', 'none']
-    def __init__(self, weight: Optional[Tensor]=None, ignore_index:int=-100, reduction:str='mean', label_smoothing:float=0.0):        
-        super().__init__()
-        if label_smoothing > 1.0 or label_smoothing < 0.0:
-            raise ValueError(f'label_smoothing value must in range [0.0, 1.0], '
-                             f'but get {label_smoothing}')
-        
-        if reduction not in self.reduction_list:
-            raise ValueError(f'Unsupported reduction {reduction}')
-        
-        self.weight = weight
-        self.ignore_index = ignore_index
-        self.reduction = reduction
-        self.label_smoothing = label_smoothing
-
-    def construct(self, input, target):
-        return cross_entropy(input, target, self.weight, self.ignore_index, self.reduction, self.label_smoothing)
-
 
 class SequenceSummary(nn.Cell):
     def __init__(self, config):

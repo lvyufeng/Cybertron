@@ -6,7 +6,7 @@ import mindspore.numpy as mnp
 import mindspore.ops as ops
 from mindspore import Parameter
 from mindspore.common.initializer import initializer, Normal
-from ..common.modules import activation_map, GELU, Dense, SequenceSummary, CrossEntropyLoss
+from ..common.modules import activation_map, Dense, SequenceSummary
 from ..common.abc import PretrainedCell
 from ..configs.gpt import GPTConfig
 
@@ -69,7 +69,7 @@ class MLP(nn.Cell):
         self.c_fc = Conv1D(n_state, nx)
         self.c_proj = Conv1D(nx, n_state) 
         afn = config.afn if config.afn != 'gelu' else 'gelu_approximate'
-        self.act = activation_map.get(afn, GELU())
+        self.act = activation_map.get(afn, nn.GELU())
 
     def construct(self, x):
         h = self.act(self.c_fc(x))
@@ -266,7 +266,7 @@ class GPTLMHeadModel(GPTPretrainedCell):
             shift_logits = lm_logits[..., :-1, :]
             shift_labels = labels[..., 1:]
             # Flatten the tokens
-            loss_fct = CrossEntropyLoss(-1)
+            loss_fct = nn.CrossEntropyLoss(-1)
             loss = loss_fct(shift_logits.view(-1, shift_logits.shape[-1]),
                             shift_labels.view(-1))
             outputs = (loss,) + outputs
@@ -296,14 +296,14 @@ class GPTDoubleHeadsModel(GPTPretrainedCell):
 
         outputs = (lm_logits, mc_logits) + transformer_outputs[1:]
         if mc_labels is not None:
-            loss_fct = CrossEntropyLoss()
+            loss_fct = nn.CrossEntropyLoss()
             loss = loss_fct(mc_logits.view(-1, mc_logits.shape[-1]),
                             mc_labels.view(-1))
             outputs = (loss,) + outputs
         if lm_labels is not None:
             shift_logits = lm_logits[..., :-1, :]
             shift_labels = lm_labels[..., 1:]
-            loss_fct = CrossEntropyLoss(ignore_index=-1)
+            loss_fct = nn.CrossEntropyLoss(ignore_index=-1)
             loss = loss_fct(shift_logits.view(-1, shift_logits.shape[-1]),
                             shift_labels.view(-1))
             outputs = (loss,) + outputs
