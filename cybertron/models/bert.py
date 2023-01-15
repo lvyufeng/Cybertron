@@ -2,12 +2,11 @@ import os
 import logging
 import mindspore.nn as nn
 import mindspore.ops as ops
-import mindspore.numpy as mnp
 import mindspore.common.dtype as mstype
-from mindspore import Parameter
-from mindspore.common.initializer import initializer
+from mindspore import Parameter, Tensor
+from mindspore.common.initializer import initializer, TruncatedNormal
+from cybertron.abc import PretrainedCell
 from ..common.modules import activation_map, Dense, Embedding
-from ..common.abc import PretrainedCell
 from ..configs.bert import BertConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
@@ -46,20 +45,8 @@ PYTORCH_PRETRAINED_MODEL_ARCHIVE_LIST = [
     "sentence-transformers/all-MiniLM-L6-v2"
 ]
 
-def torch_to_mindspore(pth_file):
-    try:
-        import torch
-    except:
-        raise ImportError(f"'import torch' failed, please install torch by "
-                          f"`pip install torch` or instructions from 'https://pytorch.org'")
-
-    from mindspore import Tensor
-    from mindspore.train.serialization import save_checkpoint
-
-    logging.info('Starting checkpoint conversion.')
+def torch_to_mindspore(state_dict):
     ms_ckpt = []
-    state_dict = torch.load(pth_file, map_location=torch.device('cpu'))
-
     for k, v in state_dict.items():
         if 'LayerNorm' in k:
             k = k.replace('LayerNorm', 'layer_norm')
@@ -74,14 +61,7 @@ def torch_to_mindspore(pth_file):
             k = k.replace('self', 'self_attn')
         ms_ckpt.append({'name': k, 'data': Tensor(v.numpy())})
 
-    ms_ckpt_path = pth_file.replace('.bin','.ckpt')
-    if not os.path.exists(ms_ckpt_path):
-        try:
-            save_checkpoint(ms_ckpt, ms_ckpt_path)
-        except:
-            raise RuntimeError(f'Save checkpoint to {ms_ckpt_path} failed, please checkout the path.')
-
-    return ms_ckpt_path
+    return ms_ckpt
 
 class BertEmbeddings(nn.Cell):
     """Embeddings for BERT, include word, position and token_type
@@ -97,7 +77,7 @@ class BertEmbeddings(nn.Cell):
     def construct(self, input_ids, token_type_ids=None, position_ids=None):
         seq_len = input_ids.shape[1]
         if position_ids is None:
-            position_ids = mnp.arange(seq_len)
+            position_ids = ops.arange(seq_len)
             position_ids = position_ids.expand_dims(0).expand_as(input_ids)
         if token_type_ids is None:
             token_type_ids = ops.zeros_like(input_ids)
@@ -296,11 +276,17 @@ class BertLMPredictionHead(nn.Cell):
 
         # The output weights are the same as the input embeddings, but there is
         # an output-only bias for each token.
-        self.decoder = Dense(config.hidden_size, config.vocab_size, has_bias=False)
+        self.decoder = nn.Dense(config.hidden_size, config.vocab_size, has_bias=False, weight_init=TruncatedNormal(config.initializer_range))
 
         self.bias = Parameter(initializer('zeros', config.vocab_size), 'bias')
 
-    def construct(self, hidden_states):
+    def construct(self, hidden_states, masked_lm_positions):
+        batch_size, seq_len, hidden_size = hidden_states.shape
+        if masked_lm_positions is not None:
+            flat_offsets = ops.arange(batch_size) * seq_len
+            flat_position = (masked_lm_positions + flat_offsets.reshape(-1, 1)).reshape(-1)
+            flat_sequence_tensor = hidden_states.reshape(-1, hidden_size)
+            hidden_states = ops.gather(flat_sequence_tensor, flat_position, 0)
         hidden_states = self.transform(hidden_states)
         hidden_states = self.decoder(hidden_states) + self.bias
         return hidden_states
@@ -329,18 +315,19 @@ class BertPreTrainingHeads(nn.Cell):
     def __init__(self, config):
         super(BertPreTrainingHeads, self).__init__()
         self.predictions = BertLMPredictionHead(config)
-        self.seq_relationship = Dense(config.hidden_size, 2)
-
-    def construct(self, sequence_output, pooled_output):
-        prediction_scores = self.predictions(sequence_output)
+        self.seq_relationship = nn.Dense(config.hidden_size, 2, weight_init=TruncatedNormal(config.initializer_range))
+    
+    def construct(self, sequence_output, pooled_output, masked_lm_positions):
+        prediction_scores = self.predictions(sequence_output, masked_lm_positions)
         seq_relationship_score = self.seq_relationship(pooled_output)
         return prediction_scores, seq_relationship_score
+
 
 class BertPretrainedCell(PretrainedCell):
     pretrained_model_archive = PRETRAINED_MODEL_ARCHIVE_MAP
     pytorch_pretrained_model_archive_list = PYTORCH_PRETRAINED_MODEL_ARCHIVE_LIST
     config_class = BertConfig
-    convert_torch_to_mindspore = torch_to_mindspore
+    name = 'bert'
 
 class BertModel(BertPretrainedCell):
     """"""
@@ -363,7 +350,7 @@ class BertModel(BertPretrainedCell):
         if head_mask is not None:
             if head_mask.ndim == 1:
                 head_mask = head_mask.expand_dims(0).expand_dims(0).expand_dims(-1).expand_dims(-1)
-                head_mask = mnp.broadcast_to(head_mask, (self.num_hidden_layers, -1, -1, -1, -1))
+                head_mask = ops.broadcast_to(head_mask, (self.num_hidden_layers, -1, -1, -1, -1))
             elif head_mask.ndim == 2:
                 head_mask = head_mask.expand_dims(1).expand_dims(-1).expand_dims(-1)
         else:
@@ -387,10 +374,10 @@ class BertForPretraining(BertPretrainedCell):
 
         self.cls.predictions.decoder.weight = self.bert.embeddings.word_embeddings.embedding_table
     
-        self.loss_fct = nn.CrossEntropyLoss(ignore_index=-1)
+        self.vocab_size = self.config.vocab_size
 
     def construct(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None,
-                  masked_lm_labels=None, next_sentence_label=None):
+                  masked_lm_labels=None, masked_lm_positions=None, masked_lm_weights=None, next_sentence_label=None):
         outputs = self.bert(
             input_ids,
             attention_mask=attention_mask,
@@ -400,13 +387,16 @@ class BertForPretraining(BertPretrainedCell):
         )
 
         sequence_output, pooled_output = outputs[:2]
-        prediction_scores, seq_relationship_score = self.cls(sequence_output, pooled_output)
+        prediction_scores, seq_relationship_score = self.cls(sequence_output, pooled_output, masked_lm_positions)
 
         outputs = (prediction_scores, seq_relationship_score,) + outputs[2:]
 
         if masked_lm_labels is not None and next_sentence_label is not None:
-            masked_lm_loss = self.loss_fct(prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1))
-            next_sentence_loss = self.loss_fct(seq_relationship_score.view(-1, 2), next_sentence_label.view(-1))
+            if masked_lm_weights is not None:
+                masked_lm_weights = masked_lm_weights.view(-1)
+            masked_lm_loss = ops.cross_entropy(prediction_scores.view(-1, prediction_scores.shape[-1]),
+                                               masked_lm_labels.view(-1), masked_lm_weights)
+            next_sentence_loss = ops.cross_entropy(seq_relationship_score.view(-1, 2), next_sentence_label.view(-1))
             total_loss = masked_lm_loss + next_sentence_loss
             outputs = (total_loss,) + outputs
         return outputs
@@ -418,6 +408,7 @@ class BertForMaskedLM(BertPretrainedCell):
         self.cls = BertOnlyMLMHead(config)
 
         self.cls.predictions.decoder.weight = self.bert.embeddings.word_embeddings.embedding_table
+        self.vocab_size = self.config.vocab_size
 
     def construct(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None,
                   masked_lm_labels=None):
@@ -432,8 +423,9 @@ class BertForMaskedLM(BertPretrainedCell):
 
         outputs = (prediction_scores,) + outputs[:2]
         if masked_lm_labels is not None:
-            loss_fct = nn.CrossEntropyLoss(ignore_index=-1)
-            masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1))
+            masked_lm_loss = ops.cross_entropy(prediction_scores.view(-1, self.vocab_size),
+                                               masked_lm_labels.view(-1),
+                                               ignore_index=-1)
             outputs = (masked_lm_loss,) + outputs
 
         return outputs
@@ -458,8 +450,9 @@ class BertForNextSentencePrediction(BertPretrainedCell):
 
         outputs = (seq_relationship_score,) + outputs[2:]  # add hidden states and attention if they are here
         if next_sentence_label is not None:
-            loss_fct = nn.CrossEntropyLoss(ignore_index=-1)
-            next_sentence_loss = loss_fct(seq_relationship_score.view(-1, 2), next_sentence_label.view(-1))
+            next_sentence_loss = ops.cross_entropy(seq_relationship_score.view(-1, 2),
+                                                   next_sentence_label.view(-1),
+                                                   ignore_index=-1)
             outputs = (next_sentence_loss,) + outputs
 
         return outputs  # (next_sentence_loss), seq_relationship_score, (hidden_states), (attentions)
@@ -490,11 +483,9 @@ class BertForSequenceClassification(BertPretrainedCell):
         if labels is not None:
             if self.num_labels == 1:
                 #  We are doing regression
-                loss_fct = nn.MSELoss()
-                loss = loss_fct(logits.view(-1), labels.view(-1))
+                loss = ops.mse_loss(logits.view(-1), labels.view(-1))
             else:
-                loss_fct = nn.CrossEntropyLoss()
-                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+                loss = ops.cross_entropy(logits.view(-1, self.num_labels), labels.view(-1))
             outputs = (loss,) + outputs
 
         return outputs  # (loss), logits, (hidden_states), (attentions)
@@ -531,8 +522,7 @@ class BertForMultipleChoice(BertPretrainedCell):
         outputs = (reshaped_logits,) + outputs[2:]  # add hidden states and attention if they are here
 
         if labels is not None:
-            loss_fct = nn.CrossEntropyLoss()
-            loss = loss_fct(reshaped_logits, labels)
+            loss = ops.cross_entropy(reshaped_logits, labels)
             outputs = (loss,) + outputs
 
         return outputs  # (loss), reshaped_logits, (hidden_states), (attentions)
@@ -561,15 +551,14 @@ class BertForTokenClassification(BertPretrainedCell):
 
         outputs = (logits,) + outputs[2:]  # add hidden states and attention if they are here
         if labels is not None:
-            loss_fct = nn.CrossEntropyLoss()
             # Only keep active parts of the loss
             if attention_mask is not None:
                 active_loss = attention_mask.view(-1) == 1
                 active_logits = logits.view(-1, self.num_labels)[active_loss]
                 active_labels = labels.view(-1)[active_loss]
-                loss = loss_fct(active_logits, active_labels)
+                loss = ops.cross_entropy(active_logits, active_labels)
             else:
-                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+                loss = ops.cross_entropy(logits.view(-1, self.num_labels), labels.view(-1))
             outputs = (loss,) + outputs
 
         return outputs  # (loss), scores, (hidden_states), (attentions)
@@ -604,9 +593,8 @@ class BertForQuestionAnswering(BertPretrainedCell):
             start_positions.clip(0, ignored_index)
             end_positions.clip(0, ignored_index)
 
-            loss_fct = nn.CrossEntropyLoss(ignore_index=ignored_index)
-            start_loss = loss_fct(start_logits, start_positions)
-            end_loss = loss_fct(end_logits, end_positions)
+            start_loss = ops.cross_entropy(start_logits, start_positions, ignore_index=ignored_index)
+            end_loss = ops.cross_entropy(end_logits, end_positions, ignore_index=ignored_index)
             total_loss = (start_loss + end_loss) / 2
             outputs = (total_loss,) + outputs
 

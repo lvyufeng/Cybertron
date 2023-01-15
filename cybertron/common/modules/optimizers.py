@@ -5,9 +5,15 @@ import mindspore.ops as ops
 from collections import OrderedDict
 from mindspore import log as logger
 from mindspore import Parameter, Tensor, ParameterTuple
-from ..utils import required
 from .lr_scheduler import _LRSchedule, SCHEDULES
 from .ops import clip_grad_norm
+
+class _RequiredParameter(object):
+    """Singleton class representing a required parameter for an Optimizer."""
+    def __repr__(self):
+        return "<required parameter>"
+
+required = _RequiredParameter()
 
 class Optimizer(nn.Cell):
     def __init__(self, params, defaults):

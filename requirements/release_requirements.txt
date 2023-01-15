@@ -1,0 +1,9 @@
+pytest
+pylint
+mindspore
+torch
+numpy
+requests
+tqdm
+ddt
+transformers==2.0.0

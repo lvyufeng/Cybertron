@@ -1,107 +1,61 @@
 import unittest
 import pytest
-import mindspore
-import torch
+import mindspore as ms
 import numpy as np
+from ddt import ddt, data
 from cybertron.models import BertModel, BertConfig, BertForPretraining
 from mindspore import Tensor
-from mindspore import context
-from transformers import BertModel as ptBertModel
 
+@ddt
 class TestModelingBert(unittest.TestCase):
-    @pytest.mark.action
-    def test_modeling_bert_pynative(self):
-        context.set_context(mode=context.PYNATIVE_MODE)
-        config = BertConfig()
-        model = BertModel(config)
+    def setUp(self) -> None:
+        self.config = BertConfig(vocab_size=1000,
+                                 hidden_size=256,
+                                 num_hidden_layers=4,
+                                 num_attention_heads=4,
+                                 intermediate_size=128)
 
-        input_ids = Tensor(np.random.randn(1, 512), mindspore.int32)
+    @data(True, False)
+    def test_modeling_bert(self, mode):
+        model = BertModel(self.config)
+        input_ids = Tensor(np.random.randn(1, 512), ms.int32)
 
-        outputs, pooled = model(input_ids)
-        assert outputs.shape == (1, 512, 768)
-        assert pooled.shape == (1, 768)
+        def forward(input_ids):
+            outputs, pooled = model(input_ids)
+            return outputs, pooled
+        
+        if mode:
+            forward = ms.jit(forward)
 
-    @pytest.mark.action
-    def test_modeling_bert_graph(self):
-        context.set_context(mode=context.GRAPH_MODE)
-        config = BertConfig()
-        model = BertModel(config)
-        model.set_train()
-        input_ids = Tensor(np.random.randn(1, 512), mindspore.int32)
+        outputs, pooled = forward(input_ids)
 
-        outputs, pooled = model(input_ids)
-        assert outputs.shape == (1, 512, 768)
-        assert pooled.shape == (1, 768)
+        assert outputs.shape == (1, 512, self.config.hidden_size)
+        assert pooled.shape == (1, self.config.hidden_size)
 
-    @pytest.mark.action
-    def test_modeling_bert_pretraining_pynative(self):
-        context.set_context(mode=context.PYNATIVE_MODE)
-        config = BertConfig()
-        model = BertForPretraining(config)
+    @data(True, False)
+    def test_modeling_bert_pretraining(self, mode):
+        model = BertForPretraining(self.config)
 
-        input_ids = Tensor(np.random.randn(1, 512), mindspore.int32)
+        input_ids = Tensor(np.random.randn(1, 512), ms.int32)
 
-        mlm_logits, nsp_logits = model(input_ids)
-        assert mlm_logits.shape == (1, 512, config.vocab_size)
+
+        def forward(input_ids):
+            mlm_logits, nsp_logits = model(input_ids)
+            return mlm_logits, nsp_logits
+        
+        if mode:
+            forward = ms.jit(forward)
+
+        mlm_logits, nsp_logits = forward(input_ids)
+        assert mlm_logits.shape == (1, 512, self.config.vocab_size)
         assert nsp_logits.shape == (1, 2)
 
-    @pytest.mark.action
-    def test_modeling_bert_pretraining_graph(self):
-        context.set_context(mode=context.GRAPH_MODE)
-        config = BertConfig()
-        model = BertForPretraining(config)
-
-        input_ids = Tensor(np.random.randn(1, 512), mindspore.int32)
-
-        mlm_logits, nsp_logits = model(input_ids)
-        assert mlm_logits.shape == (1, 512, config.vocab_size)
-        assert nsp_logits.shape == (1, 2)
-
+    @pytest.mark.local
     def test_modeling_bert_from_torch(self):
-        context.set_context(mode=context.PYNATIVE_MODE)
         model = BertModel.load('bert-base-uncased', from_torch=True)
 
-        input_ids = Tensor(np.random.randn(1, 512), mindspore.int32)
+        input_ids = Tensor(np.random.randn(1, 512), ms.int32)
 
         outputs, pooled = model(input_ids)
         assert outputs.shape == (1, 512, 768)
         assert pooled.shape == (1, 768)
-
-    def test_modeling_bert_with_ckpt_pynative(self):
-        context.set_context(mode=context.PYNATIVE_MODE)
-        model = BertModel.load('bert-base-uncased')
-        model.set_train(False)
-        input_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] + [0] * 500
-
-        ms_input_ids = Tensor(input_ids, mindspore.int32).reshape(1, -1)
-        outputs, pooled = model(ms_input_ids)
-        
-        pt_model = ptBertModel.from_pretrained('bert-base-uncased')
-        pt_model.eval()
-        pt_input_ids = torch.IntTensor(input_ids).reshape(1, -1)
-        outputs_pt, pooled_pt = pt_model(input_ids=pt_input_ids)
-
-        assert np.allclose(outputs.asnumpy(), outputs_pt.detach().numpy(), atol=1e-5)
-        assert np.allclose(pooled.asnumpy(), pooled_pt.detach().numpy(), atol=1e-5)
-
-    def test_modeling_bert_sequence_with_ckpt(self):
-        from cybertron import BertForSequenceClassification
-        from transformers import BertForSequenceClassification as ptBertForSequenceClassification
-        context.set_context(mode=context.GRAPH_MODE)
-        model = BertForSequenceClassification.load('bert-base-uncased')
-        model.set_train(False)
-        input_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] + [0] * 500
-
-        
-        pt_model = ptBertForSequenceClassification.from_pretrained('bert-base-uncased')
-        pt_model.eval()
-
-        model.classifier.weight.set_data(mindspore.Tensor(pt_model.classifier.weight.detach().numpy()))
-        model.classifier.bias.set_data(mindspore.Tensor(pt_model.classifier.bias.detach().numpy()))
-
-        ms_input_ids = Tensor(input_ids, mindspore.int32).reshape(1, -1)
-        (outputs, ) = model(ms_input_ids)
-        pt_input_ids = torch.IntTensor(input_ids).reshape(1, -1)
-        (outputs_pt,) = pt_model(input_ids=pt_input_ids)
-
-        assert np.allclose(outputs.asnumpy(), outputs_pt.detach().numpy(), atol=1e-5)

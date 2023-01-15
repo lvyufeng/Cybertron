@@ -1,6 +1,6 @@
 import mindspore
 import mindspore.nn as nn
-import mindspore.numpy as mnp
+import mindspore.ops as ops
 from mindspore import Parameter
 from mindspore.common.initializer import initializer
 
@@ -31,7 +31,7 @@ class RobertaEmbeddings(BertEmbeddings):
     def construct(self, input_ids, token_type_ids=None, position_ids=None):
         seq_length = input_ids.shape[1]
         if position_ids is None:
-            position_ids = mnp.arange(self.padding_idx+1, seq_length+self.padding_idx+1, dtype=mindspore.int64)
+            position_ids = ops.arange(self.padding_idx+1, seq_length+self.padding_idx+1, dtype=mindspore.int64)
             position_ids = position_ids.expand_dims(0).expand_as(input_ids)
         return super().construct(input_ids, token_type_ids, position_ids)
 
@@ -70,7 +70,7 @@ class RobertaClassificationHead(nn.Cell):
         super().__init__()
         self.dense = Dense(config.hidden_size, config.hidden_size, activation='tanh')
         self.dropout = nn.Dropout(1-config.hidden_dropout_prob)
-        self.out_proj = Dense(config.hidden_size, config._num_labels)
+        self.out_proj = Dense(config.hidden_size, config.num_labels)
     
     def construct(self, features):
         x = features[:, 0, :]
@@ -90,6 +90,7 @@ class RobertaForMaskedLM(BertPretrainedCell):
         self.roberta = RobertaModel(config)
         self.lm_head = RobertaLMHead(config)
         self.lm_head.decoder.weight = self.roberta.embeddings.word_embeddings.embedding_table
+        self.vocab_size = self.config.vocab_size
 
     def construct(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None,
                   masked_lm_labels=None):
@@ -104,8 +105,8 @@ class RobertaForMaskedLM(BertPretrainedCell):
         outputs = (prediction_scores,) + outputs[2:]  # Add hidden states and attention if they are here
 
         if masked_lm_labels is not None:
-            loss_fct = nn.CrossEntropyLoss(ignore_index=-1)
-            masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1))
+            masked_lm_loss = ops.cross_entropy(prediction_scores.view(-1, self.vocab_size),
+                                               masked_lm_labels.view(-1), ignore_index=-1)
             outputs = (masked_lm_loss,) + outputs
 
         return outputs
@@ -135,11 +136,9 @@ class RobertaForSequenceClassification(BertPretrainedCell):
         if labels is not None:
             if self.num_labels == 1:
                 #  We are doing regression
-                loss_fct = nn.MSELoss()
-                loss = loss_fct(logits.view(-1), labels.view(-1))
+                loss = ops.mse_loss(logits.view(-1), labels.view(-1))
             else:
-                loss_fct = nn.CrossEntropyLoss()
-                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+                loss = ops.cross_entropy(logits.view(-1, self.num_labels), labels.view(-1))
             outputs = (loss,) + outputs
 
         return outputs  # (loss), logits, (hidden_states), (attentions)
@@ -174,8 +173,7 @@ class RobertaForMultipleChoice(BertPretrainedCell):
         outputs = (reshaped_logits,) + outputs[2:]  # add hidden states and attention if they are here
 
         if labels is not None:
-            loss_fct = nn.CrossEntropyLoss()
-            loss = loss_fct(reshaped_logits, labels)
+            loss = ops.cross_entropy(reshaped_logits, labels)
             outputs = (loss,) + outputs
 
         return outputs  # (loss), reshaped_logits, (hidden_states), (attentions)

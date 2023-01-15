@@ -2,14 +2,13 @@ import os
 import logging
 import mindspore
 import mindspore.nn as nn
-import mindspore.numpy as mnp
 import mindspore.ops as ops
-from mindspore import Parameter
+from mindspore import Parameter, Tensor
 from mindspore.common.initializer import initializer, Normal
+from cybertron.abc import PretrainedCell
+from ..common.modules.ops import ibnd_snd_to_ibns, ijbs_ibns_to_ijbn, mbnd_mlb_to_lbnd, lbnd_mlb_to_mbnd, blh_bl_to_bh
 from ..common.modules import Dense, SequenceSummary, PoolerAnswerClass, PoolerEndLogits, PoolerStartLogits, \
     activation_map
-from ..common.abc import PretrainedCell
-from ..common.modules.ops import *
 from ..configs.xlnet import XLNetConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
@@ -19,19 +18,8 @@ PRETRAINED_MODEL_ARCHIVE_MAP = {
 
 PYTORCH_PRETRAINED_MODEL_ARCHIVE_LIST = ["xlnet-base-cased", "xlnet-large-cased"]
 
-def torch_to_mindspore(pth_file):
-    try:
-        import torch
-    except:
-        raise ImportError(f"'import torch' failed, please install torch by "
-                          f"`pip install torch` or instructions from 'https://pytorch.org'")
-
-    from mindspore import Tensor
-    from mindspore.train.serialization import save_checkpoint
-
-    logging.info('Starting checkpoint conversion.')
+def torch_to_mindspore(state_dict):
     ms_ckpt = []
-    state_dict = torch.load(pth_file, map_location=torch.device('cpu'))
 
     for k, v in state_dict.items():
         if 'layer_norm' in k:
@@ -43,14 +31,7 @@ def torch_to_mindspore(pth_file):
             k = k.replace('weight', 'embedding_table')
         ms_ckpt.append({'name': k, 'data': Tensor(v.numpy())})
 
-    ms_ckpt_path = pth_file.replace('.bin','.ckpt')
-    if not os.path.exists(ms_ckpt_path):
-        try:
-            save_checkpoint(ms_ckpt, ms_ckpt_path)
-        except:
-            raise RuntimeError(f'Save checkpoint to {ms_ckpt_path} failed, please checkout the path.')
-
-    return ms_ckpt_path
+    return ms_ckpt
 
 class XLNetRelativeAttention(nn.Cell):
     def __init__(self, config):
@@ -95,9 +76,11 @@ class XLNetRelativeAttention(nn.Cell):
     def rel_attn_core(self, q_head, k_head_h, v_head_h, k_head_r, seg_mat=None, attn_mask=None, head_mask=None):
         """Core relative positional attention operations."""
         # content based attention score
-        ac = ibnd_jbnd_to_ijbn(q_head + self.r_w_bias, k_head_h)
+        # ibnd_jbnd_to_ijbn
+        ac = ops.bmm((q_head + self.r_w_bias).transpose(1, 2, 0, 3), k_head_h.transpose(1, 2, 3, 0)).transpose(2, 3, 0, 1)
         # position based attention score
-        bd = ibnd_jbnd_to_ijbn(q_head + self.r_r_bias, k_head_r)
+        # ibnd_jbnd_to_ijbn
+        bd = ops.bmm((q_head + self.r_r_bias).transpose(1, 2, 0, 3), k_head_r.transpose(1, 2, 3, 0)).transpose(2, 3, 0, 1)
         bd = self.rel_shift(bd, klen=ac.shape[1])
 
         # segment based attention score
@@ -105,6 +88,7 @@ class XLNetRelativeAttention(nn.Cell):
             ef = 0
         else:
             ef = ibnd_snd_to_ibns(q_head + self.r_s_bias, self.seg_embed)
+            # ijbs_ibns_to_ijbn
             ef = ijbs_ibns_to_ijbn(seg_mat, ef)
 
         # merge attention scores and perform masking
@@ -117,7 +101,7 @@ class XLNetRelativeAttention(nn.Cell):
                 attn_score = attn_score - 1e30 * attn_mask
 
         # attention probability
-        attn_prob = ops.Softmax(1)(attn_score)
+        attn_prob = ops.softmax(attn_score, -1)
         attn_prob = self.dropout(attn_prob)
 
         # Mask heads if we want to
@@ -125,7 +109,8 @@ class XLNetRelativeAttention(nn.Cell):
             attn_prob = attn_prob * head_mask
 
         # attention output
-        attn_vec = ijbn_jbnd_to_ibnd(attn_prob, v_head_h)
+        # ijbn_jbnd_to_ibnd
+        attn_vec = ops.bmm(attn_prob.transpose(2, 3, 0, 1), v_head_h.transpose(1, 2, 0, 3)).transpose(2, 0, 1, 3)
 
         if self.output_attentions:
             return attn_vec, attn_prob
@@ -149,7 +134,7 @@ class XLNetRelativeAttention(nn.Cell):
         attn_prob = None
         if g is not None:
             if mems is not None and mems.ndim > 1:
-                cat = mnp.concatenate([mems, h])
+                cat = ops.concat([mems, h])
             else:
                 cat = h
             k_head_h = ops.dot(cat, self.k)
@@ -199,7 +184,7 @@ class XLNetRelativeAttention(nn.Cell):
         else:
             ###### Multi-head attention with relative positional encoding
             if mems is not None and mems.ndim > 1:
-                cat = mnp.concatenate([mems, h])
+                cat = ops.concat([mems, h])
             else:
                 cat = h
 
@@ -271,7 +256,7 @@ class XLNetPretrainedCell(PretrainedCell):
     pretrained_model_archive = PRETRAINED_MODEL_ARCHIVE_MAP
     pytorch_pretrained_model_archive_list = PYTORCH_PRETRAINED_MODEL_ARCHIVE_LIST
     config_class = XLNetConfig
-    convert_torch_to_mindspore = torch_to_mindspore
+    name = 'xlnet'
 
 class XLNetModel(XLNetPretrainedCell):
     def __init__(self, config, *args, **kwargs):
@@ -308,29 +293,30 @@ class XLNetModel(XLNetPretrainedCell):
                  [0 0 0 0 0 0 0 0 1]     [1 1 1 0 0 0 0 0 1]
                v [0 0 0 0 0 0 0 0 0]     [1 1 1 1 0 0 0 0 0]
         """
-        attn_mask = mnp.ones((qlen, qlen))
-        mask_up = mnp.triu(attn_mask, k=1)
-        attn_mask_pad = mnp.zeros((qlen, mlen))
-        ret = mnp.concatenate((attn_mask_pad, mask_up), axis=1)
+        attn_mask = ops.ones((qlen, qlen))
+        mask_up = ops.triu(attn_mask, k=1)
+        attn_mask_pad = ops.zeros((qlen, mlen))
+        ret = ops.concatenate((attn_mask_pad, mask_up), axis=1)
         if self.same_length:
-            mask_lo = mnp.tril(attn_mask, k=-1)
-            ret = mnp.concatenate((ret[:, :qlen] + mask_lo, ret[:, qlen:]), axis=1)
+            mask_lo = ops.tril(attn_mask, k=-1)
+            ret = ops.concat((ret[:, :qlen] + mask_lo, ret[:, qlen:]), axis=1)
         return ret
 
     def positional_embedding(self, pos_seq, inv_freq, bsz=None):
         sinusoid_inp = ops.matmul(pos_seq.expand_dims(-1), inv_freq.expand_dims(0))
-        pos_emb = mnp.concatenate((mnp.sin(sinusoid_inp), mnp.cos(sinusoid_inp)), axis=-1)
+        pos_emb = ops.concat((ops.sin(sinusoid_inp), ops.cos(sinusoid_inp)), axis=-1)
         pos_emb = pos_emb[:, None, :]
 
         if bsz is not None:
             pos_emb = ops.BroadcastTo((-1, bsz, -1))(pos_emb)
-
+            # pos_emb = ops.broadcast_to(pos_emb, (-1, bsz, -1))
+            # pos_emb = pos_emb.expand(Tensor((-1, bsz, -1)))
         return pos_emb
 
     def relative_positional_encoding(self, qlen, klen, bsz=None):
         """create relative positional encoding."""
-        freq_seq = mnp.arange(0, self.d_model, 2, dtype=mnp.float32)
-        inv_freq = 1 / mnp.power(10000, (freq_seq / self.d_model))
+        freq_seq = ops.arange(0, self.d_model, 2, dtype=mindspore.float32)
+        inv_freq = 1 / ops.pow(10000, (freq_seq / self.d_model))
 
         if self.attn_type == 'bi':
             # beg, end = klen - 1, -qlen
@@ -344,8 +330,8 @@ class XLNetModel(XLNetPretrainedCell):
         #     raise ValueError('Unknown `attn_type` {}.'.format(self.attn_type))
 
         if self.bi_data:
-            fwd_pos_seq = mnp.arange(beg, end, -1.0, dtype=mindspore.float32)
-            bwd_pos_seq = mnp.arange(-beg, -end, 1.0, dtype=mindspore.float32)
+            fwd_pos_seq = ops.arange(beg, end, -1.0, dtype=mindspore.float32)
+            bwd_pos_seq = ops.arange(-beg, -end, 1.0, dtype=mindspore.float32)
 
             if self.clamp_len > 0:
                 fwd_pos_seq = fwd_pos_seq.clip(-self.clamp_len, self.clamp_len)
@@ -358,9 +344,9 @@ class XLNetModel(XLNetPretrainedCell):
                 fwd_pos_emb = self.positional_embedding(fwd_pos_seq, inv_freq)
                 bwd_pos_emb = self.positional_embedding(bwd_pos_seq, inv_freq)
 
-            pos_emb = mnp.concatenate((fwd_pos_emb, bwd_pos_emb), axis=1)
+            pos_emb = ops.concat((fwd_pos_emb, bwd_pos_emb), axis=1)
         else:
-            fwd_pos_seq = mnp.arange(beg, end, -1)
+            fwd_pos_seq = ops.arange(beg, end, -1)
             if self.clamp_len > 0:
                 fwd_pos_seq = fwd_pos_seq.clip(-self.clamp_len, self.clamp_len)
             pos_emb = self.positional_embedding(fwd_pos_seq, inv_freq, bsz)
@@ -378,7 +364,7 @@ class XLNetModel(XLNetPretrainedCell):
             if prev_mem is None:
                 new_mem = curr_out[-self.mem_len:]
             else:
-                new_mem = mnp.concatenate((prev_mem, curr_out), axis=0)[-self.mem_len:]
+                new_mem = ops.concat((prev_mem, curr_out), axis=0)[-self.mem_len:]
 
         return new_mem
 
@@ -421,8 +407,8 @@ class XLNetModel(XLNetPretrainedCell):
         if data_mask is not None:
             # all mems can be attended to
             if mlen > 0:
-                mems_mask = mnp.zeros((data_mask.shape[0], mlen, bsz))
-                data_mask = mnp.concatenate((mems_mask, data_mask), axis=1)
+                mems_mask = ops.zeros((data_mask.shape[0], mlen, bsz))
+                data_mask = ops.concat((mems_mask, data_mask), axis=1)
             if attn_mask is None:
                 attn_mask = data_mask[:, :, :, None]
             else:
@@ -432,9 +418,9 @@ class XLNetModel(XLNetPretrainedCell):
             attn_mask = (attn_mask > 0)
 
         if attn_mask is not None:
-            non_tgt_mask = -mnp.eye(qlen)
+            non_tgt_mask = -ops.eye(qlen)
             if mlen > 0:
-                non_tgt_mask = mnp.cat((mnp.zeros((qlen, mlen)), non_tgt_mask), axis=-1)
+                non_tgt_mask = ops.cat((ops.zeros((qlen, mlen)), non_tgt_mask), axis=-1)
             non_tgt_mask = ((attn_mask + non_tgt_mask[:, :, None, None]) > 0)
         else:
             non_tgt_mask = None
@@ -443,7 +429,7 @@ class XLNetModel(XLNetPretrainedCell):
         word_emb_k = self.word_embedding(input_ids)
         output_h = self.dropout(word_emb_k)
         if target_mapping is not None:
-            word_emb_q = mnp.broadcast_to(self.mask_emb, (target_mapping.shape[0], bsz, -1))
+            word_emb_q = ops.broadcast_to(self.mask_emb, (target_mapping.shape[0], bsz, -1))
         # else:  # We removed the inp_q input which was same as target mapping
         #     inp_q_ext = inp_q[:, :, None]
         #     word_emb_q = inp_q_ext * self.mask_emb + (1 - inp_q_ext) * word_emb_k
@@ -455,14 +441,14 @@ class XLNetModel(XLNetPretrainedCell):
         if token_type_ids is not None:
             # Convert `token_type_ids` to one-hot `seg_mat`
             if mlen > 0:
-                mem_pad = mnp.zeros((mlen, bsz), dtype=mindspore.int32)
-                cat_ids = mnp.concatenate((mem_pad, token_type_ids), axis=0)
+                mem_pad = ops.zeros((mlen, bsz), dtype=mindspore.int32)
+                cat_ids = ops.concat((mem_pad, token_type_ids), axis=0)
             else:
                 cat_ids = token_type_ids
 
             # `1` indicates not in the same segment [qlen x klen x bsz]
             seg_mat = (token_type_ids[:, None] != cat_ids[None, :]).astype(mindspore.int32)
-            seg_mat = ops.OneHot()(seg_mat, seg_mat.ndim + 2, ops.scalar_to_tensor(1, mindspore.int32), ops.scalar_to_tensor(0, mindspore.int32))
+            seg_mat = ops.one_hot(seg_mat, seg_mat.ndim + 2, ops.scalar_to_tensor(1, mindspore.int32), ops.scalar_to_tensor(0, mindspore.int32))
         else:
             seg_mat = None
 
@@ -478,7 +464,7 @@ class XLNetModel(XLNetPretrainedCell):
         if head_mask is not None:
             if head_mask.ndim == 1:
                 head_mask = head_mask.expand_dims(0).expand_dims(0).expand_dims(0).expand_dims(0)
-                head_mask = mnp.broadcast_to(head_mask, (self.n_layer, -1, -1, -1, -1))
+                head_mask = ops.broadcast_to(head_mask, (self.n_layer, -1, -1, -1, -1))
             elif head_mask.ndim == 2:
                 head_mask = head_mask.expand_dims(1).expand_dims(1).expand_dims(1)
         else:
@@ -563,9 +549,7 @@ class XLNetLMHeadModel(XLNetPretrainedCell):
 
         if labels is not None:
             # Flatten the tokens
-            loss_fct = nn.CrossEntropyLoss(ignore_index=-1)
-            loss = loss_fct(logits.view(-1, logits.size(-1)),
-                            labels.view(-1))
+            loss = ops.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=-1)
             outputs = (loss,) + outputs
 
         return outputs  # return (loss), logits, mems, (hidden states), (attentions)
@@ -599,11 +583,9 @@ class XLNetForSequenceClassification(XLNetPretrainedCell):
         if labels is not None:
             if self.num_labels == 1:
                 #  We are doing regression
-                loss_fct = nn.MSELoss()
-                loss = loss_fct(logits.view(-1), labels.view(-1))
+                loss = ops.mse_loss(logits.view(-1), labels.view(-1))
             else:
-                loss_fct = nn.CrossEntropyLoss()
-                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+                loss = ops.cross_entropy(logits.view(-1, self.num_labels), labels.view(-1))
             outputs = (loss,) + outputs
 
         return outputs  # return (loss), logits, mems, (hidden states), (attentions)
@@ -639,8 +621,7 @@ class XLNetForMultipleChoice(XLNetPretrainedCell):
         outputs = (reshaped_logits,) + transformer_outputs[1:]  # Keep mems, hidden states, attentions if there are in it
 
         if labels is not None:
-            loss_fct = nn.CrossEntropyLoss()
-            loss = loss_fct(reshaped_logits, labels.view(-1))
+            loss = ops.cross_entropy(reshaped_logits, labels.view(-1))
             outputs = (loss,) + outputs
 
         return outputs  # return (loss), logits, mems, (hidden states), (attentions)
@@ -669,7 +650,7 @@ class XLNetForQuestionAnsweringSimple(XLNetPretrainedCell):
         sequence_output = outputs[0]
 
         logits = self.qa_outputs(sequence_output)
-        start_logits, end_logits = mnp.split(logits, 1, axis=-1)
+        start_logits, end_logits = ops.split(logits, 1, axis=-1)
         start_logits = start_logits.squeeze(-1)
         end_logits = end_logits.squeeze(-1)
 
@@ -680,9 +661,8 @@ class XLNetForQuestionAnsweringSimple(XLNetPretrainedCell):
             start_positions.clip(0, ignored_index)
             end_positions.clip(0, ignored_index)
 
-            loss_fct = nn.CrossEntropyLoss(ignore_index=ignored_index)
-            start_loss = loss_fct(start_logits, start_positions)
-            end_loss = loss_fct(end_logits, end_positions)
+            start_loss = ops.cross_entropy(start_logits, start_positions, ignore_index=ignored_index)
+            end_loss = ops.cross_entropy(end_logits, end_positions, ignore_index=ignored_index)
             total_loss = (start_loss + end_loss) / 2
             outputs = (total_loss,) + outputs
 
@@ -726,16 +706,14 @@ class XLNetForQuestionAnswering(XLNetPretrainedCell):
             # during training, compute the end logits based on the ground truth of the start position
             end_logits = self.end_logits(hidden_states, start_positions=start_positions, p_mask=p_mask)
 
-            loss_fct = nn.CrossEntropyLoss()
-            start_loss = loss_fct(start_logits, start_positions)
-            end_loss = loss_fct(end_logits, end_positions)
+            start_loss = ops.cross_entropy(start_logits, start_positions)
+            end_loss = ops.cross_entropy(end_logits, end_positions)
             total_loss = (start_loss + end_loss) / 2
 
             if cls_index is not None and is_impossible is not None:
                 # Predict answerability from the representation of CLS and START
                 cls_logits = self.answer_class(hidden_states, start_positions=start_positions, cls_index=cls_index)
-                loss_fct_cls = nn.BCEWithLogitsLoss()
-                cls_loss = loss_fct_cls(cls_logits, is_impossible)
+                cls_loss = ops.binary_cross_entropy_with_logits(cls_logits, is_impossible)
 
                 # note(zhiliny): by default multiply the loss by 0.5 so that the scale is comparable to start_loss and end_loss
                 total_loss += cls_loss * 0.5
@@ -745,19 +723,19 @@ class XLNetForQuestionAnswering(XLNetPretrainedCell):
         else:
             # during inference, compute the end logits based on beam search
             bsz, slen, hsz = hidden_states.shape
-            start_log_probs = ops.Softmax()(start_logits) # shape (bsz, slen)
+            start_log_probs = ops.softmax(start_logits) # shape (bsz, slen)
 
-            start_top_log_probs, start_top_index = ops.TopK()(start_log_probs, self.start_n_top) # shape (bsz, start_n_top)
-            start_top_index_exp = mnp.broadcast_to(start_top_index.expand_dims(-1), (-1, -1, hsz)) # shape (bsz, start_n_top, hsz)
+            start_top_log_probs, start_top_index = ops.top_k(start_log_probs, self.start_n_top) # shape (bsz, start_n_top)
+            start_top_index_exp = ops.broadcast_to(start_top_index.expand_dims(-1), (-1, -1, hsz)) # shape (bsz, start_n_top, hsz)
             start_states = ops.gather_d(hidden_states, -2, start_top_index_exp) # shape (bsz, start_n_top, hsz)
-            start_states = mnp.broadcast_to(start_states.expand_dims(1), (-1, slen, -1, -1)) # shape (bsz, slen, start_n_top, hsz)
+            start_states = ops.broadcast_to(start_states.expand_dims(1), (-1, slen, -1, -1)) # shape (bsz, slen, start_n_top, hsz)
 
             hidden_states_expanded = hidden_states.expand_dims(2).expand_as(start_states) # shape (bsz, slen, start_n_top, hsz)
             p_mask = p_mask.expand_dims(-1) if p_mask is not None else None
             end_logits = self.end_logits(hidden_states_expanded, start_states=start_states, p_mask=p_mask)
-            end_log_probs = ops.Softmax(1)(end_logits) # shape (bsz, slen, start_n_top)
+            end_log_probs = ops.softmax(end_logits, 1) # shape (bsz, slen, start_n_top)
 
-            end_top_log_probs, end_top_index = ops.TopK()(end_log_probs, self.end_n_top) # shape (bsz, end_n_top, start_n_top)
+            end_top_log_probs, end_top_index = ops.top_k(end_log_probs, self.end_n_top) # shape (bsz, end_n_top, start_n_top)
             end_top_log_probs = end_top_log_probs.view(-1, self.start_n_top * self.end_n_top)
             end_top_index = end_top_index.view(-1, self.start_n_top * self.end_n_top)
 

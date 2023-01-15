@@ -1,4 +1,4 @@
-from ..common.abc import PretrainedConfig
+from cybertron.abc import PretrainedConfig
 
 CONFIG_ARCHIVE_MAP = {
     "bert-base-uncased": "https://huggingface.co/bert-base-uncased/resolve/main/config.json",

@@ -3,6 +3,7 @@ import requests
 import tempfile
 import logging
 import shutil
+import importlib
 from pathlib import Path
 from tqdm import tqdm
 from typing import IO
@@ -59,34 +60,32 @@ def http_get(url: str, temp_file:IO):
             temp_file.write(chunk)
     progress.close()
 
-def convert_state_dict(pth_file):
+def convert_state_dict(module_or_pth_file, model):
     try:
         import torch
     except:
         raise ImportError(f"'import torch' failed, please install torch by "
                           f"`pip install torch` or instructions from 'https://pytorch.org'")
 
-    from mindspore import Tensor
+    from mindspore import Tensor, Parameter
     from mindspore.train.serialization import save_checkpoint
 
     logging.info('Starting checkpoint conversion.')
-    ms_ckpt = []
-    state_dict = torch.load(pth_file, map_location=torch.device('cpu'))
 
-    for k, v in state_dict.items():
-        if 'LayerNorm' in k:
-            k = k.replace('LayerNorm', 'layer_norm')
-            if '.weight' in k:
-                k = k.replace('.weight', '.gamma')
-            if '.bias' in k:
-                k = k.replace('.bias', '.beta')
-        if 'embeddings' in k:
-            k = k.replace('weight', 'embedding_table')
-        if 'self' in k:
-            k = k.replace('self', 'self_attn')
-        ms_ckpt.append({'name': k, 'data': Tensor(v.numpy())})
+    if isinstance(module_or_pth_file, torch.nn.Module):
+        is_module = True
+        state_dict = module_or_pth_file.state_dict()
+    else:
+        is_module = False
+        state_dict = torch.load(module_or_pth_file, map_location=torch.device('cpu'))
 
-    ms_ckpt_path = pth_file.replace('.bin','.ckpt')
+    convert_func = importlib.import_module('cybertron.models.' + model).torch_to_mindspore
+    ms_ckpt = convert_func(state_dict)
+
+    if is_module:
+        return {i['name']: Parameter(i['data'], i['name']) for i in ms_ckpt}
+
+    ms_ckpt_path = module_or_pth_file.replace('.bin','.ckpt')
     if not os.path.exists(ms_ckpt_path):
         try:
             save_checkpoint(ms_ckpt, ms_ckpt_path)
@@ -94,10 +93,3 @@ def convert_state_dict(pth_file):
             raise RuntimeError(f'Save checkpoint to {ms_ckpt_path} failed, please checkout the path.')
 
     return ms_ckpt_path
-
-class _RequiredParameter(object):
-    """Singleton class representing a required parameter for an Optimizer."""
-    def __repr__(self):
-        return "<required parameter>"
-
-required = _RequiredParameter()

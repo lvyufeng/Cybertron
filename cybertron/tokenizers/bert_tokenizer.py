@@ -23,7 +23,7 @@ import os
 import unicodedata
 from io import open
 
-from ..common.abc import PreTrainedTokenizer
+from cybertron.abc import PreTrainedTokenizer
 
 logger = logging.getLogger(__name__)
 

@@ -1,4 +1,4 @@
-from ..common.abc import PretrainedConfig
+from cybertron.abc import PretrainedConfig
 
 CONFIG_ARCHIVE_MAP = {
     "openai-gpt": "https://huggingface.co/openai-gpt/resolve/main/config.json"

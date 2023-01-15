@@ -6,7 +6,7 @@ import os
 from typing import Optional, Union
 from mindspore import nn
 from mindspore.train.serialization import load_checkpoint, load_param_into_net
-from ..utils import load_from_cache, HUGGINGFACE_BASE_URL
+from ..utils import load_from_cache, convert_state_dict, HUGGINGFACE_BASE_URL
 from .config import PretrainedConfig
 
 class PretrainedCell(nn.Cell):
@@ -16,11 +16,11 @@ class PretrainedCell(nn.Cell):
     Args:
         xxx
     """
+    name = None
     pretrained_model_archive = {}
     pytorch_pretrained_model_archive_list = []
     config_class = None
-    convert_torch_to_mindspore = lambda torch_model_file: None #pylint: disable=C3001
-
+ 
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -69,7 +69,8 @@ class PretrainedCell(nn.Cell):
             torch_model_file = load_from_cache(pretrained_model_name_or_path + '.bin',
                                                model_url,
                                                force_download=force_download)
-            model_file = cls.convert_torch_to_mindspore(torch_model_file)
+            model_file = convert_state_dict(torch_model_file, cls.name)
+
         else:
             # Something unknown
             raise ValueError(

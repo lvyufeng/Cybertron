@@ -1,4 +1,4 @@
-from ..common.abc import PretrainedConfig
+from cybertron.abc import PretrainedConfig
 
 CONFIG_ARCHIVE_MAP = {
     "xlnet-base-cased": "https://huggingface.co/xlnet-base-cased/raw/main/config.json",
@@ -10,10 +10,10 @@ class XLNetConfig(PretrainedConfig):
 
     def __init__(self,
                  vocab_size=32000,
-                 d_model=768,
-                 n_layer=12,
-                 n_head=12,
-                 d_inner=3072,
+                 d_model=1024,
+                 n_layer=24,
+                 n_head=16,
+                 d_inner=4096,
                  max_position_embeddings=512,
                  ff_activation="gelu",
                  untie_r=True,

@@ -1,13 +1,13 @@
 import os
 import logging
 import mindspore
+import numpy as np
 import mindspore.nn as nn
-import mindspore.numpy as mnp
 import mindspore.ops as ops
-from mindspore import Parameter
+from mindspore import Parameter, Tensor
 from mindspore.common.initializer import initializer, Normal
+from cybertron.abc import PretrainedCell
 from ..common.modules import activation_map, Dense, SequenceSummary
-from ..common.abc import PretrainedCell
 from ..configs.gpt import GPTConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
@@ -16,20 +16,8 @@ PRETRAINED_MODEL_ARCHIVE_MAP = {
 
 PYTORCH_PRETRAINED_MODEL_ARCHIVE_LIST = ["openai-gpt"]
 
-def torch_to_mindspore(pth_file):
-    try:
-        import torch
-    except:
-        raise ImportError(f"'import torch' failed, please install torch by "
-                          f"`pip install torch` or instructions from 'https://pytorch.org'")
-
-    from mindspore import Tensor
-    from mindspore.train.serialization import save_checkpoint
-
-    logging.info('Starting checkpoint conversion.')
+def torch_to_mindspore(state_dict):
     ms_ckpt = []
-    state_dict = torch.load(pth_file, map_location=torch.device('cpu'))
-
     for k, v in state_dict.items():
         if 'ln' in k:
             if '.weight' in k:
@@ -40,14 +28,7 @@ def torch_to_mindspore(pth_file):
             k = k.replace('weight', 'embedding_table')
         ms_ckpt.append({'name': k, 'data': Tensor(v.numpy())})
 
-    ms_ckpt_path = pth_file.replace('.bin','.ckpt')
-    if not os.path.exists(ms_ckpt_path):
-        try:
-            save_checkpoint(ms_ckpt, ms_ckpt_path)
-        except:
-            raise RuntimeError(f'Save checkpoint to {ms_ckpt_path} failed, please checkout the path.')
-
-    return ms_ckpt_path
+    return ms_ckpt
 
 class Conv1D(nn.Cell):
     def __init__(self, nf, nx):
@@ -83,8 +64,9 @@ class Attention(nn.Cell):
 
         n_state = nx
         assert n_state % config.n_head == 0
-        self.bias = Parameter(mnp.tril(mnp.ones((n_ctx, n_ctx))).view(1, 1, n_ctx, n_ctx), 'bias')
+        self.bias = Parameter(Tensor(np.tril(np.ones((n_ctx, n_ctx))), mindspore.float32).view(1, 1, n_ctx, n_ctx), 'bias')
         self.n_head = config.n_head
+        self.split_size = n_state
         self.scale = scale
 
         self.output_attentions = config.output_attentions
@@ -104,7 +86,7 @@ class Attention(nn.Cell):
         if attention_mask is not None:
             w = w + attention_mask
 
-        w = nn.Softmax()(w)
+        w = ops.softmax(w)
         w = self.attn_dropout(w)
 
         if head_mask is not None:
@@ -130,7 +112,7 @@ class Attention(nn.Cell):
 
     def construct(self, x, attention_mask=None, head_mask=None):
         x = self.c_attn(x)
-        query, key, value = mnp.split(x, 3, axis=2)
+        query, key, value = ops.split(x, self.split_size, axis=2)
         query = self.split_heads(query)
         key = self.split_heads(key, k=True)
         value = self.split_heads(value)
@@ -172,7 +154,7 @@ class GPTPretrainedCell(PretrainedCell):
     pretrained_model_archive = PRETRAINED_MODEL_ARCHIVE_MAP
     pytorch_pretrained_model_archive_list = PYTORCH_PRETRAINED_MODEL_ARCHIVE_LIST
     config_class = GPTConfig
-    convert_torch_to_mindspore = torch_to_mindspore
+    name = 'gpt'
 
 class GPTModel(GPTPretrainedCell):
     def __init__(self, config, *args, **kwargs):
@@ -188,7 +170,7 @@ class GPTModel(GPTPretrainedCell):
 
     def construct(self, input_ids, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None):
         if position_ids is None:
-            position_ids = mnp.arange(input_ids.shape[-1], dtype=mindspore.int32)
+            position_ids = ops.arange(input_ids.shape[-1], dtype=mindspore.int32)
             position_ids = position_ids.expand_dims(0).expand_as(input_ids)
         
         if attention_mask is not None:
@@ -198,7 +180,7 @@ class GPTModel(GPTPretrainedCell):
         if head_mask is not None:
             if head_mask.ndim == 1:
                 head_mask = head_mask.expand_dims(0).expand_dims(0).expand_dims(-1).expand_dims(-1)
-                head_mask = mnp.broadcast_to(head_mask, (self.n_layer, -1, -1, -1, -1))
+                head_mask = ops.broadcast_to(head_mask, (self.n_layer, -1, -1, -1, -1))
             elif head_mask.ndim == 2:
                 head_mask = head_mask.expand_dims(1).expand_dims(-1).expand_dims(-1)
         else:
@@ -266,9 +248,8 @@ class GPTLMHeadModel(GPTPretrainedCell):
             shift_logits = lm_logits[..., :-1, :]
             shift_labels = labels[..., 1:]
             # Flatten the tokens
-            loss_fct = nn.CrossEntropyLoss(-1)
-            loss = loss_fct(shift_logits.view(-1, shift_logits.shape[-1]),
-                            shift_labels.view(-1))
+            loss = ops.cross_entropy(shift_logits.view(-1, shift_logits.shape[-1]),
+                                     shift_labels.view(-1), ignore_index=-1)
             outputs = (loss,) + outputs
 
         return outputs  # (loss), lm_logits, (all hidden states), (all attentions)
@@ -296,16 +277,14 @@ class GPTDoubleHeadsModel(GPTPretrainedCell):
 
         outputs = (lm_logits, mc_logits) + transformer_outputs[1:]
         if mc_labels is not None:
-            loss_fct = nn.CrossEntropyLoss()
-            loss = loss_fct(mc_logits.view(-1, mc_logits.shape[-1]),
+            loss = ops.cross_entropy(mc_logits.view(-1, mc_logits.shape[-1]),
                             mc_labels.view(-1))
             outputs = (loss,) + outputs
         if lm_labels is not None:
             shift_logits = lm_logits[..., :-1, :]
             shift_labels = lm_labels[..., 1:]
-            loss_fct = nn.CrossEntropyLoss(ignore_index=-1)
-            loss = loss_fct(shift_logits.view(-1, shift_logits.shape[-1]),
-                            shift_labels.view(-1))
+            loss = ops.cross_entropy(shift_logits.view(-1, shift_logits.shape[-1]),
+                                     shift_labels.view(-1), ignore_index=-1)
             outputs = (loss,) + outputs
 
         return outputs  # (lm loss), (mc loss), lm logits, mc logits, (all hidden_states), (attentions)
