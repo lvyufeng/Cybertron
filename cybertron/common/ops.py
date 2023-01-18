@@ -6,6 +6,11 @@ from mindspore import Tensor
 from mindspore.ops import constexpr
 from mindspore.ops._primitive_cache import _get_cache_prim
 
+def dropout(x, p=0.5, training=True):
+    if training:
+        return ops.dropout(x, p)
+    return x
+
 def ibnd_jbnd_to_ijbn(a, b):
     # a -> (i, 1, b, n, d)
     a = a.expand_dims(1)

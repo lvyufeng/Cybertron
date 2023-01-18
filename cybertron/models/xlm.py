@@ -3,8 +3,7 @@ import mindspore
 import mindspore.nn as nn
 import mindspore.ops as ops
 import mindspore.numpy as mnp
-from ..common.activations import GELU
-from ..common.layers import Dense
+from cybertron.common.layers import GELU, Dense
 
 class MultiHeadAttention(nn.Cell):
     NEW_ID = itertools.count()

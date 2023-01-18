@@ -6,8 +6,8 @@ import mindspore.common.dtype as mstype
 from mindspore import Parameter, Tensor
 from mindspore.common.initializer import initializer, TruncatedNormal
 from cybertron.abc import PretrainedCell
-from ..common.modules import activation_map, Dense, Embedding
-from ..configs.bert import BertConfig
+from cybertron.common.layers import activation_map, Dense, Embedding
+from cybertron.configs.bert import BertConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
     "bert-base-uncased": "https://huggingface.co/lvyufeng/bert/resolve/main/bert-base-uncased.ckpt",

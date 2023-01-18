@@ -6,10 +6,10 @@ import mindspore.ops as ops
 from mindspore import Parameter, Tensor
 from mindspore.common.initializer import initializer, Normal
 from cybertron.abc import PretrainedCell
-from ..common.modules.ops import ibnd_snd_to_ibns, ijbs_ibns_to_ijbn, mbnd_mlb_to_lbnd, lbnd_mlb_to_mbnd, blh_bl_to_bh
-from ..common.modules import Dense, SequenceSummary, PoolerAnswerClass, PoolerEndLogits, PoolerStartLogits, \
+from cybertron.common.ops import ibnd_snd_to_ibns, ijbs_ibns_to_ijbn, mbnd_mlb_to_lbnd, lbnd_mlb_to_mbnd, blh_bl_to_bh
+from cybertron.common.layers import Dense, SequenceSummary, PoolerAnswerClass, PoolerEndLogits, PoolerStartLogits, \
     activation_map
-from ..configs.xlnet import XLNetConfig
+from cybertron.configs.xlnet import XLNetConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
     "xlnet-base-cased": "https://huggingface.co/lvyufeng/xlnet/resolve/main/xlnet-base-cased.ckpt", 
@@ -369,7 +369,8 @@ class XLNetModel(XLNetPretrainedCell):
         return new_mem
 
     def construct(self, input_ids, attention_mask=None, mems=None, perm_mask=None, target_mapping=None,
-                  token_type_ids=None, input_mask=None, head_mask=None):
+                  token_type_ids=None, input_mask=None, head_mask=None, inputs_embeds=None, use_cache=True,
+                  output_attentions=None, output_hidden_states=None,):
         input_ids = input_ids.swapaxes(0, 1)
         token_type_ids = token_type_ids.swapaxes(0, 1) if token_type_ids is not None else None
         input_mask = input_mask.swapaxes(0, 1) if input_mask is not None else None
@@ -504,7 +505,10 @@ class XLNetModel(XLNetPretrainedCell):
             output = self.dropout(output_h)
 
         # Prepare outputs, we transpose back here to shape [bsz, len, hidden_dim] (cf. beginning of forward() method)
-        outputs = (output.transpose(1, 0, 2), new_mems)
+        outputs = (output.transpose(1, 0, 2),)
+        if self.mem_len is not None and self.mem_len > 0 and use_cache is True:
+            outputs = outputs + (new_mems,)
+
         new_hidden_states = ()
         if self.output_hidden_states:
             if output_g is not None:

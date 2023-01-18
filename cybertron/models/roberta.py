@@ -4,9 +4,9 @@ import mindspore.ops as ops
 from mindspore import Parameter
 from mindspore.common.initializer import initializer
 
-from cybertron.common.modules import Dense
-from .bert import BertEmbeddings, BertModel, BertPretrainedCell
-from ..configs.roberta import RobertaConfig
+from cybertron.common.layers import Dense
+from cybertron.models.bert import BertEmbeddings, BertModel, BertPretrainedCell
+from cybertron.configs.roberta import RobertaConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {
     "roberta-base": "https://huggingface.co/lvyufeng/roberta/resolve/main/roberta-base.ckpt",

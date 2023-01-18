@@ -294,3 +294,10 @@ class SQuADHead(nn.Cell):
         # return start_top_log_probs, start_top_index, end_top_log_probs, end_top_index, cls_logits
         # or (if labels are provided) (total_loss,)
         return outputs
+
+activation_map = {
+    'relu': nn.ReLU(),
+    'gelu': nn.GELU(False),
+    'gelu_approximate': nn.GELU(),
+    'swish':nn.SiLU()
+}

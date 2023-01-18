@@ -3,8 +3,8 @@ import pytest
 import mindspore
 import mindspore.nn as nn
 from mindspore import grad
-from cybertron import BertAdam
-from cybertron.common.modules.lr_scheduler import ConstantLR, WarmupLinearSchedule
+from cybertron.common.optimizers import BertAdam
+from cybertron.common.lr_scheduler import ConstantLR, WarmupLinearSchedule
 
 class ScheduleInitTest(unittest.TestCase):
     def test_bert_sched_init(self):

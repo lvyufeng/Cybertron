@@ -7,7 +7,7 @@ import mindspore.ops as ops
 from mindspore import Parameter, Tensor
 from mindspore.common.initializer import initializer, Normal
 from cybertron.abc import PretrainedCell
-from ..common.modules import activation_map, Dense, SequenceSummary
+from ..common.layers import activation_map, Dense, SequenceSummary
 from ..configs.gpt import GPTConfig
 
 PRETRAINED_MODEL_ARCHIVE_MAP = {

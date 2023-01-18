@@ -16,7 +16,7 @@ class TestBertComparison(unittest.TestCase):
                                     num_hidden_layers=4,
                                     num_attention_heads=4,
                                     intermediate_size=128)
-        self.pt_config = ptBertConfig(vocab_size_or_config_json_file=1000,
+        self.pt_config = ptBertConfig(vocab_size=1000,
                                       hidden_size=256,
                                       num_hidden_layers=4,
                                       num_attention_heads=4,

@@ -16,16 +16,15 @@ class TestModelingXLNet(unittest.TestCase):
         input_ids = Tensor(np.random.randn(1, 512), ms.int32)
 
         def forward(input_ids):
-            (outputs, new_mems) = model(input_ids)
-            return outputs, new_mems
-        
+            (outputs,) = model(input_ids)
+            return outputs
+
         if mode:
             forward = ms.jit(forward)
 
 
-        (outputs, new_mems) = forward(input_ids)
+        outputs = forward(input_ids)
         assert outputs.shape == (1, 512, 1024)
-        assert len(new_mems) == config.n_layer
 
     @pytest.mark.local
     def test_modeling_xlnet_from_torch(self):
@@ -33,5 +32,5 @@ class TestModelingXLNet(unittest.TestCase):
 
         input_ids = Tensor(np.random.randn(1, 512), ms.int32)
 
-        (outputs, _) = model(input_ids)
+        (outputs,) = model(input_ids)
         assert outputs.shape == (1, 512, 768)

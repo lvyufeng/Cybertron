@@ -29,9 +29,9 @@ class TestXLNetComparison(unittest.TestCase):
         input_ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] + [0] * 500
 
         ms_input_ids = Tensor(input_ids, mindspore.int32).reshape(1, -1)
-        (outputs, _) = model(ms_input_ids)
+        (outputs,) = model(ms_input_ids)
         
         pt_input_ids = torch.IntTensor(input_ids).reshape(1, -1)
-        (outputs_pt, _) = pt_model(input_ids=pt_input_ids)
+        (outputs_pt,) = pt_model(input_ids=pt_input_ids)
 
         assert (outputs.asnumpy() - outputs_pt.detach().numpy()).mean() < 1e-5
