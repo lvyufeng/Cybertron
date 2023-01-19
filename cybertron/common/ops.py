@@ -11,6 +11,16 @@ def dropout(x, p=0.5, training=True):
         return ops.dropout(x, p)
     return x
 
+def linear(x, w, b):
+    out = ops.matmul(x, w.swapaxes(-1, -2))
+    if b is not None:
+        out = out + b
+    return out
+
+def triu(input, diagonal=0):
+    triu_ = _get_cache_prim(ops.Triu)(diagonal)
+    return triu_(input)
+
 def ibnd_jbnd_to_ijbn(a, b):
     # a -> (i, 1, b, n, d)
     a = a.expand_dims(1)

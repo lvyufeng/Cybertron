@@ -57,8 +57,6 @@ def torch_to_mindspore(state_dict):
                 k = k.replace('.bias', '.beta')
         if 'embeddings' in k:
             k = k.replace('weight', 'embedding_table')
-        if 'self' in k:
-            k = k.replace('self', 'self_attn')
         ms_ckpt.append({'name': k, 'data': Tensor(v.numpy())})
 
     return ms_ckpt
