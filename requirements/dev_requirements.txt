@@ -6,4 +6,5 @@ numpy
 requests
 tqdm
 ddt
-transformers==3.0.0
+transformers
+huggingface_hub

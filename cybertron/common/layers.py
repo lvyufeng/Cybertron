@@ -8,15 +8,20 @@ from mindspore.common.initializer import initializer, Normal, Uniform, HeUniform
 from mindspore import Tensor
 from .ops import blh_bl_to_bh
 
-class Dense(nn.Dense):
-    def __init__(self, in_channels, out_channels, weight_init=None, bias_init=None, has_bias=True, activation=None):
-        if weight_init is None:
-            weight_init = initializer(HeUniform(math.sqrt(5)), (out_channels, in_channels))
-        if bias_init is None:
+class Dropout(nn.Dropout):
+    def __init__(self, p=0.5):
+        super().__init__(1-p, mindspore.float32)
+
+class Linear(nn.Dense):
+    def __init__(self, in_channels, out_channels, bias=True):
+        weight_init = initializer(HeUniform(math.sqrt(5)), (out_channels, in_channels))
+        if bias:
             fan_in, _ = _calculate_fan_in_and_fan_out((out_channels, in_channels))
             bound = 1 / math.sqrt(fan_in)
             bias_init = initializer(Uniform(bound), (out_channels))
-        super().__init__(in_channels, out_channels, weight_init=weight_init, bias_init=bias_init, has_bias=has_bias, activation=activation)
+        else:
+            bias_init = None
+        super().__init__(in_channels, out_channels, weight_init=weight_init, bias_init=bias_init, has_bias=bias, activation=None)
 
 class Embedding(nn.Embedding):
     def __init__(self, vocab_size, embedding_size, use_one_hot=False, embedding_table='normal', dtype=mindspore.float32, padding_idx=None):

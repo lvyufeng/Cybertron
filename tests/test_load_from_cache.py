@@ -2,7 +2,7 @@ import unittest
 import pytest
 import os
 from cybertron.utils import load_from_cache
-from cybertron.configs.bert import CONFIG_ARCHIVE_MAP
+from cybertron.transformers.bert.bert import CONFIG_ARCHIVE_MAP
 
 class TestLoadFromCache(unittest.TestCase):
     def test_load_from_cache_default_path(self):
